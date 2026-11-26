@@ -6,7 +6,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts"],
-    languageOptions: { globals: { ...globals.node } },
+    files: ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );
