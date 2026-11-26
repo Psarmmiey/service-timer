@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" style="--dc-editor-backdrop: #171717; --dc-editor-hatch-ink: rgba(250,249,245,.07); touch-action: none; overscroll-behavior: none;"><head><style>.sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);border:1px solid color-mix(in srgb,currentColor 50%,transparent);border-radius:2px;box-sizing:border-box;overflow:hidden}@keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}html.sc-dc-streaming .sc-placeholder,html.sc-dc-streaming .sc-interp.sc-missing{position:relative;background:color-mix(in srgb,currentColor 5%,transparent);border-color:transparent}html.sc-dc-streaming .sc-placeholder::before,html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);background-size:400% 100%;animation:sc-shine 1.4s ease infinite}html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;background:color-mix(in srgb,currentColor 8%,transparent)}.sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}.sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);border-radius:2px;box-sizing:border-box;color:transparent;user-select:none}.sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;color:color-mix(in srgb,currentColor 50%,transparent);background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;padding:0 3px}.sc-host.sc-has-error{position:relative}.sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;border-radius:4px;white-space:pre-wrap;pointer-events:none}@media print{@page{margin: 0.5cm;}figure,table{break-inside: avoid;}#dc-root,#dc-root > .sc-host{height: auto;}*,*::before,*::after{print-color-adjust: exact;-webkit-print-color-adjust: exact;backdrop-filter: none !important;-webkit-backdrop-filter: none !important;animation-delay: -99s !important;animation-duration: .001s !important;animation-iteration-count: 1 !important;animation-fill-mode: both !important;animation-play-state: running !important;transition-duration: 0s !important;}}</style>
+
+
+<meta charset="utf-8">
+<title>Saved plans and editor</title>
+<base href="/appifact/Plans.dc.html">
+
+
+
+<style>x-dc{display:none!important}</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" data-dc-tpl="1"><style data-dc-tpl="2">
+body{margin:0}
+a{color:#18181b}a:hover{color:#52525b}
+.btn{font:500 14px Inter,sans-serif;height:36px;padding:0 14px;border-radius:8px;border:1px solid #e4e4e7;background:#fff;color:#18181b;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;text-decoration:none}
+.btn:hover{background:#f4f4f5}
+.btn-p{background:#18181b;color:#fafafa;border-color:#18181b}.btn-p:hover{background:#27272a}
+.inp{height:36px;border:1px solid #e4e4e7;border-radius:8px;padding:0 10px;font:14px Inter,sans-serif;color:#09090b;box-sizing:border-box;background:#fff}
+.inp:hover{border-color:#a1a1aa}
+.lbl{font-size:13px;font-weight:500;color:#09090b}
+.sw{appearance:none;-webkit-appearance:none;width:36px;height:20px;margin:0;border-radius:999px;background:#e4e4e7;position:relative;cursor:pointer;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s}
+.sw:checked{background:#18181b}.sw:checked::after{left:18px}
+.btn:focus-visible,.inp:focus-visible,.sw:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..300&amp;display=swap" data-font-variant=""><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,800..900&amp;display=swap" data-font-variant=""><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@1,100..900&amp;display=swap" data-font-variant=""><style data-dc-editor-style="">body:not([data-dc-editor-overlay-hidden]) [data-dc-editor-hover][data-dc-editor-hover-stroke]:not([data-dc-editor-selected]){filter:drop-shadow(0 0 calc(1*var(--dc-chrome-unit,1px)) color-mix(in srgb,#2a78d6 90%,transparent)) drop-shadow(0 0 calc(2*var(--dc-chrome-unit,1px)) color-mix(in srgb,#2a78d6 55%,transparent))!important;}body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy="copy"]) [data-dc-editor-dragging],body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy]) [data-dc-dragging],body[data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]{opacity:0.55!important;}:is(body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy="copy"]) [data-dc-editor-dragging],body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy]) [data-dc-dragging],body[data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]):where(:not([style*="outline-offset"])){outline:calc(2*var(--dc-chrome-unit,1px)) solid #2a78d6!important;outline-offset:calc(-1*var(--dc-chrome-unit,1px))!important;}body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging],body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging],body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]>*,body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]>*{opacity:0!important;outline:none!important;}[data-dc-editor-drag-proxy],[data-dc-editor-drag-proxy] *{pointer-events:none!important;}body[data-dc-editor-no-anchor],body[data-dc-editor-no-anchor] *{overflow-anchor:none!important;}body[data-dc-editor-on]:not([data-dc-editor-tool="interact"]) *{cursor:default!important;user-select:none!important;}body[data-dc-editor-on]:not([data-dc-editor-tool="interact"]) :not([data-dc-editor-overlay-root]):not([data-dc-editor-overlay-root] *){pointer-events:auto!important;transition:none!important;animation:none!important;}body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]){pointer-events:none!important;}body[data-dc-editor-move] :not([data-dc-editor-overlay-root]):not([data-dc-editor-overlay-root] *){pointer-events:auto!important;transition:none!important;animation-duration:0s!important;animation-delay:0s!important;}body[data-dc-editor-on][data-dc-editor-tool="rect"] *,body[data-dc-editor-on][data-dc-editor-tool="frame"] *,body[data-dc-editor-on][data-dc-editor-tool="grid"] *,body[data-dc-editor-on][data-dc-editor-tool="oval"] *,body[data-dc-editor-on][data-dc-editor-tool="arrow"] *,body[data-dc-editor-on][data-dc-editor-tool="line"] *{cursor:crosshair!important;}body[data-dc-editor-on][data-dc-editor-tool="text"] *{cursor:text!important;}body[data-dc-editor-on][data-dc-editor-tool="draw"] *{cursor:url('data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2216%22%20height=%2216%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20d=%22M2%2014l1-4%208-8a2.1%202.1%200%200%201%203%203l-8%208-4%201z%22%20fill=%22%23333%22%20stroke=%22%23fff%22%20stroke-width=%221%22/%3E%3C/svg%3E') 1 15, crosshair!important;}body[data-dc-editor-on] [data-dc-editor-editing][contenteditable],body[data-dc-editor-on] [data-dc-editor-editing][contenteditable] *,body[data-dc-editor-on] [data-dc-editor-svg-editing]{cursor:text!important;}body[data-dc-editor-on] [data-dc-editor-editing="import"]{outline:none!important;}html:not([data-dc-canvas]):has(body[data-dc-editor-on]:not([data-dc-capturing]) .sc-host){background:var(--dc-editor-backdrop,#ededeb);}html:not([data-dc-canvas]) body[data-dc-editor-on]:not([data-dc-capturing]):has(.sc-host){background:var(--dc-editor-backdrop,#ededeb);}html:not([data-dc-canvas]) body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host){min-height:calc(100vh - var(--dc-editor-host-vpad,0px));}html:not([data-dc-canvas]) body[data-dc-editor-on]:not([data-dc-capturing]) .sc-host:not(.sc-host .sc-host){background:var(--dc-editor-host-bg,#fff);}html[data-dc-frameless],html[data-dc-frameless] body[data-dc-editor-on],html[data-dc-frameless] body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host){background:transparent!important;min-height:0!important;}html:has(body[data-dc-capturing]),body[data-dc-capturing]{transition:none!important;}html[data-dc-canvas]{overflow:hidden;}html[data-dc-canvas] body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host)::before{content:"";position:absolute;left:-100000px;top:-100000px;width:200000px;height:200000px;pointer-events:none;background:repeating-linear-gradient(45deg,var(--dc-editor-hatch-ink,rgba(0,0,0,.05)) 0 8px,transparent 8px 16px);clip-path:polygon(0 0,100% 0,100% 50%,50% 50%,50% 100%,0 100%);}</style></head>
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Plans"><div data-dc-tpl="3" style="width: 1366px; height: 720px; box-sizing: border-box; background: rgb(250, 250, 250); font-family: Inter, sans-serif; color: rgb(9, 9, 11); display: flex; flex-direction: column;">
+  <header data-dc-tpl="4" style="height: 52px; padding: 0px 16px; border-bottom: 1px solid rgb(228, 228, 231); background: rgb(255, 255, 255); display: flex; align-items: center; gap: 12px; flex: 0 0 auto;">
+    <a data-dc-tpl="5" class="btn" href="Main.dc.html" style="border-color: transparent;">
+      <svg data-dc-tpl="6" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="7" d="m15 18-6-6 6-6"></path></svg>Back to timer
+    </a>
+    <div data-dc-tpl="8" style="font-weight: 700; font-size: 15px;">Service plans</div>
+    <div data-dc-tpl="9" style="flex: 1 1 0%;"></div>
+    <span data-dc-tpl="10" style="font-size: 13px; color: rgb(82, 82, 91); display: flex; align-items: center; gap: 6px;"><svg data-dc-tpl="11" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" aria-hidden="true"><path data-dc-tpl="12" d="M20 6 9 17l-5-5"></path></svg>All changes saved</span>
+  </header>
+
+  <main data-dc-tpl="13" style="flex: 1 1 0%; min-height: 0px; display: flex;">
+    <aside data-dc-tpl="14" style="width: 300px; border-right: 1px solid rgb(228, 228, 231); background: rgb(255, 255, 255); display: flex; flex-direction: column; flex: 0 0 auto;">
+      <div data-dc-tpl="15" style="padding: 14px; display: flex; gap: 8px;">
+        <button data-dc-tpl="16" class="btn btn-p" style="flex: 1 1 0%;"><svg data-dc-tpl="17" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="18" d="M12 5v14M5 12h14"></path></svg>New plan</button>
+        <button data-dc-tpl="19" class="btn">Import</button>
+      </div>
+      <div data-dc-tpl="20" style="flex: 1 1 0%; padding: 0px 8px; display: flex; flex-direction: column; gap: 2px;">
+        
+          <button data-dc-tpl="22" style="font-family: Inter, sans-serif; text-align: left; width: 100%; border: 0px; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: rgb(9, 9, 11); background: rgb(244, 244, 245);">
+            <span data-dc-tpl="23" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="sc-interp">Sunday service</span>
+              <span data-dc-tpl="25" style="font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: rgb(220, 252, 231); color: rgb(22, 101, 52);">Active</span>
+            </span>
+            <span data-dc-tpl="26" style="font-size: 12px; color: rgb(82, 82, 91);"><span class="sc-interp">Recurring</span> · <span class="sc-interp">Sun 9:45</span></span>
+            <span data-dc-tpl="27" style="font-size: 12px; color: rgb(82, 82, 91);">Next: <span class="sc-interp">Sun 29 Nov</span> · <span class="sc-interp">6</span> items</span>
+          </button>
+        
+          <button data-dc-tpl="22" style="font-family: Inter, sans-serif; text-align: left; width: 100%; border: 0px; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: rgb(9, 9, 11); background: transparent;">
+            <span data-dc-tpl="23" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="sc-interp">Thanksgiving service</span>
+              
+            </span>
+            <span data-dc-tpl="26" style="font-size: 12px; color: rgb(82, 82, 91);"><span class="sc-interp">One-off</span> · <span class="sc-interp">Sun 13 Dec, 10:00</span></span>
+            <span data-dc-tpl="27" style="font-size: 12px; color: rgb(82, 82, 91);">Next: <span class="sc-interp">Sun 13 Dec</span> · <span class="sc-interp">6</span> items</span>
+          </button>
+        
+          <button data-dc-tpl="22" style="font-family: Inter, sans-serif; text-align: left; width: 100%; border: 0px; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: rgb(9, 9, 11); background: transparent;">
+            <span data-dc-tpl="23" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="sc-interp">Midweek Bible study</span>
+              
+            </span>
+            <span data-dc-tpl="26" style="font-size: 12px; color: rgb(82, 82, 91);"><span class="sc-interp">Recurring</span> · <span class="sc-interp">Wed 19:00</span></span>
+            <span data-dc-tpl="27" style="font-size: 12px; color: rgb(82, 82, 91);">Next: <span class="sc-interp">Wed 2 Dec</span> · <span class="sc-interp">6</span> items</span>
+          </button>
+        
+          <button data-dc-tpl="22" style="font-family: Inter, sans-serif; text-align: left; width: 100%; border: 0px; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: rgb(9, 9, 11); background: transparent;">
+            <span data-dc-tpl="23" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="sc-interp">Youth service</span>
+              
+            </span>
+            <span data-dc-tpl="26" style="font-size: 12px; color: rgb(82, 82, 91);"><span class="sc-interp">Recurring</span> · <span class="sc-interp">Sat 16:00</span></span>
+            <span data-dc-tpl="27" style="font-size: 12px; color: rgb(82, 82, 91);">Next: <span class="sc-interp">Sat 28 Nov</span> · <span class="sc-interp">6</span> items</span>
+          </button>
+        
+      </div>
+    </aside>
+
+    <section data-dc-tpl="28" style="flex: 1 1 0%; min-width: 0px; padding: 16px 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div data-dc-tpl="29" style="display: flex; align-items: flex-end; gap: 12px;">
+        <div data-dc-tpl="30" style="flex: 1 1 0%; display: flex; flex-direction: column; gap: 6px;">
+          <label data-dc-tpl="31" for="pname" class="lbl">Plan name</label>
+          <input data-dc-tpl="32" id="pname" class="inp" value="Sunday service" style="font-size: 16px; font-weight: 600; height: 40px;">
+        </div>
+        <button data-dc-tpl="33" class="btn">Duplicate</button>
+        <button data-dc-tpl="34" class="btn">Export</button>
+      </div>
+
+      <div data-dc-tpl="35" style="display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap;">
+        <div data-dc-tpl="36" style="display: flex; flex-direction: column; gap: 6px;">
+          <span data-dc-tpl="37" class="lbl" id="type-lbl">Type</span>
+          <div data-dc-tpl="38" role="group" aria-labelledby="type-lbl" style="display: inline-flex; padding: 3px; background: rgb(244, 244, 245); border-radius: 8px; gap: 2px;">
+            <button data-dc-tpl="39" class="btn" aria-pressed="true" style="height: 30px; border-color: transparent; box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 2px;">Recurring</button>
+            <button data-dc-tpl="40" class="btn" aria-pressed="false" style="height: 30px; border-color: transparent; background: transparent; color: rgb(82, 82, 91);">One-off date</button>
+          </div>
+        </div>
+        <div data-dc-tpl="41" style="display: flex; flex-direction: column; gap: 6px;">
+          <label data-dc-tpl="42" for="st" class="lbl">Start time</label>
+          <input data-dc-tpl="43" id="st" class="inp" type="time" value="09:45" style="width: 120px;">
+        </div>
+        
+          <div data-dc-tpl="45" style="display: flex; flex-direction: column; gap: 6px;">
+            <span data-dc-tpl="46" class="lbl" id="days-lbl">Days</span>
+            <div data-dc-tpl="47" role="group" aria-labelledby="days-lbl" style="display: flex; gap: 4px;">
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="true" style="width: 46px; padding: 0px; background: rgb(24, 24, 27); color: rgb(250, 250, 250); border-color: rgb(24, 24, 27);"><span class="sc-interp">Sun</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Mon</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Tue</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Wed</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Thu</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Fri</span></button>
+              
+                <button data-dc-tpl="49" class="btn" aria-pressed="false" style="width: 46px; padding: 0px; color: rgb(82, 82, 91);"><span class="sc-interp">Sat</span></button>
+              
+            </div>
+          </div>
+        
+        
+        <div data-dc-tpl="54" style="display: flex; flex-direction: column; gap: 10px;">
+          <label data-dc-tpl="55" style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;"><input data-dc-tpl="56" type="checkbox" role="switch" class="sw" checked=""> Start automatically</label>
+          <label data-dc-tpl="57" style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;"><input data-dc-tpl="58" type="checkbox" role="switch" class="sw"> Auto-advance at time up</label>
+        </div>
+      </div>
+
+      <div data-dc-tpl="59" style="background: rgb(255, 255, 255); border: 1px solid rgb(228, 228, 231); border-radius: 12px; overflow: hidden;">
+        <div data-dc-tpl="60" style="display: flex; gap: 12px; padding: 8px 12px; background: rgb(250, 250, 250); border-bottom: 1px solid rgb(228, 228, 231); font-size: 12px; font-weight: 600; color: rgb(82, 82, 91);">
+          <span data-dc-tpl="61" style="width: 28px;"></span><span data-dc-tpl="62" style="width: 52px;">Starts</span><span data-dc-tpl="63" style="flex: 1 1 0%;">Item</span><span data-dc-tpl="64" style="width: 80px;">Minutes</span><span data-dc-tpl="65" style="width: 32px;"></span>
+        </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">9:45</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Welcome and opening prayer" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="5" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">9:50</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Praise and worship" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="20" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">10:10</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Announcements" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="5" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">10:15</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Offering" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="10" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">10:25</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Sermon" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="40" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+          <div data-dc-tpl="67" style="display: flex; gap: 12px; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgb(244, 244, 245);">
+            <button data-dc-tpl="68" class="btn" aria-label="Drag to reorder, or use arrow keys" style="width: 28px; height: 28px; padding: 0px; border-color: transparent; cursor: grab;"><svg data-dc-tpl="69" width="18" height="18" viewBox="0 0 24 24" fill="#71717a" aria-hidden="true"><circle data-dc-tpl="70" cx="9" cy="6" r="1.5"></circle><circle data-dc-tpl="71" cx="15" cy="6" r="1.5"></circle><circle data-dc-tpl="72" cx="9" cy="12" r="1.5"></circle><circle data-dc-tpl="73" cx="15" cy="12" r="1.5"></circle><circle data-dc-tpl="74" cx="9" cy="18" r="1.5"></circle><circle data-dc-tpl="75" cx="15" cy="18" r="1.5"></circle></svg></button>
+            <span data-dc-tpl="76" style="width: 52px; font-size: 13px; color: rgb(82, 82, 91); font-variant-numeric: tabular-nums;"><span class="sc-interp">11:05</span></span>
+            <input data-dc-tpl="77" class="inp" aria-label="Item title" value="Closing prayer" style="flex: 1 1 0%; height: 32px;">
+            <input data-dc-tpl="78" class="inp" inputmode="decimal" aria-label="Minutes" value="5" style="width: 80px; height: 32px; font-variant-numeric: tabular-nums;">
+            <button data-dc-tpl="79" class="btn" aria-label="Remove item" style="width: 32px; height: 32px; padding: 0px; border-color: transparent; color: rgb(113, 113, 122);"><svg data-dc-tpl="80" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="81" d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+        
+        <div data-dc-tpl="82" style="display: flex; align-items: center; gap: 12px; padding: 8px 12px;">
+          <button data-dc-tpl="83" class="btn" style="border-style: dashed; height: 32px;"><svg data-dc-tpl="84" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path data-dc-tpl="85" d="M12 5v14M5 12h14"></path></svg>Add item</button>
+          <div data-dc-tpl="86" style="flex: 1 1 0%;"></div>
+          <span data-dc-tpl="87" style="font-size: 13px; color: rgb(82, 82, 91);">Total <b data-dc-tpl="88" style="color: rgb(9, 9, 11);">85 min</b> · ends <b data-dc-tpl="89" style="color: rgb(9, 9, 11);"><span class="sc-interp">11:10</span></b></span>
+        </div>
+      </div>
+
+      <div data-dc-tpl="90" style="flex: 1 1 0%;"></div>
+      <div data-dc-tpl="91" style="display: flex; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid rgb(228, 228, 231);">
+        <span data-dc-tpl="92" style="flex: 1 1 0%; font-size: 12px; color: rgb(82, 82, 91);">Deleting a plan can be undone for 10 seconds.</span>
+        <button data-dc-tpl="93" class="btn" style="color: rgb(185, 28, 28); border-color: rgb(254, 202, 202);">Delete plan</button>
+      </div>
+    </section>
+  </main></div></div></div>
+
+
+
+</body></html>

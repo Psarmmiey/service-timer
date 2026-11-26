@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" style="--dc-editor-backdrop: #171717; --dc-editor-hatch-ink: rgba(250,249,245,.07); touch-action: none; overscroll-behavior: none;"><head><style>.sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);border:1px solid color-mix(in srgb,currentColor 50%,transparent);border-radius:2px;box-sizing:border-box;overflow:hidden}@keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}html.sc-dc-streaming .sc-placeholder,html.sc-dc-streaming .sc-interp.sc-missing{position:relative;background:color-mix(in srgb,currentColor 5%,transparent);border-color:transparent}html.sc-dc-streaming .sc-placeholder::before,html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);background-size:400% 100%;animation:sc-shine 1.4s ease infinite}html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;background:color-mix(in srgb,currentColor 8%,transparent)}.sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}.sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);border-radius:2px;box-sizing:border-box;color:transparent;user-select:none}.sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;color:color-mix(in srgb,currentColor 50%,transparent);background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;padding:0 3px}.sc-host.sc-has-error{position:relative}.sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;border-radius:4px;white-space:pre-wrap;pointer-events:none}@media print{@page{margin: 0.5cm;}figure,table{break-inside: avoid;}#dc-root,#dc-root > .sc-host{height: auto;}*,*::before,*::after{print-color-adjust: exact;-webkit-print-color-adjust: exact;backdrop-filter: none !important;-webkit-backdrop-filter: none !important;animation-delay: -99s !important;animation-duration: .001s !important;animation-iteration-count: 1 !important;animation-fill-mode: both !important;animation-play-state: running !important;transition-duration: 0s !important;}}</style>
+
+
+<meta charset="utf-8">
+<title>Late start prompt</title>
+<base href="/appifact/LateStart.dc.html">
+
+
+
+<style>x-dc{display:none!important}</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" data-dc-tpl="1"><style data-dc-tpl="2">
+body{margin:0}
+a{color:#18181b}a:hover{color:#52525b}
+.btn{font:500 14px Inter,sans-serif;height:40px;padding:0 16px;border-radius:8px;border:1px solid #e4e4e7;background:#fff;color:#18181b;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box}
+.btn:hover{background:#f4f4f5}
+.btn-p{background:#18181b;color:#fafafa;border-color:#18181b}.btn-p:hover{background:#27272a}
+.opt{font-family:Inter,sans-serif;text-align:left;width:100%;border:1px solid #e4e4e7;background:#fff;border-radius:10px;padding:14px 16px;display:flex;gap:14px;align-items:flex-start;cursor:pointer;box-sizing:border-box;color:#09090b}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..300&amp;display=swap" data-font-variant=""><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,800..900&amp;display=swap" data-font-variant=""><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@1,100..900&amp;display=swap" data-font-variant=""><style data-dc-editor-style="">body:not([data-dc-editor-overlay-hidden]) [data-dc-editor-hover][data-dc-editor-hover-stroke]:not([data-dc-editor-selected]){filter:drop-shadow(0 0 calc(1*var(--dc-chrome-unit,1px)) color-mix(in srgb,#2a78d6 90%,transparent)) drop-shadow(0 0 calc(2*var(--dc-chrome-unit,1px)) color-mix(in srgb,#2a78d6 55%,transparent))!important;}body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy="copy"]) [data-dc-editor-dragging],body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy]) [data-dc-dragging],body[data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]{opacity:0.55!important;}:is(body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy="copy"]) [data-dc-editor-dragging],body:not([data-dc-editor-overlay-hidden]):not([data-dc-editor-proxy]) [data-dc-dragging],body[data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]):where(:not([style*="outline-offset"])){outline:calc(2*var(--dc-chrome-unit,1px)) solid #2a78d6!important;outline-offset:calc(-1*var(--dc-chrome-unit,1px))!important;}body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging],body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging],body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]>*,body[data-dc-editor-proxy="move"]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]>*{opacity:0!important;outline:none!important;}[data-dc-editor-drag-proxy],[data-dc-editor-drag-proxy] *{pointer-events:none!important;}body[data-dc-editor-no-anchor],body[data-dc-editor-no-anchor] *{overflow-anchor:none!important;}body[data-dc-editor-on]:not([data-dc-editor-tool="interact"]) *{cursor:default!important;user-select:none!important;}body[data-dc-editor-on]:not([data-dc-editor-tool="interact"]) :not([data-dc-editor-overlay-root]):not([data-dc-editor-overlay-root] *){pointer-events:auto!important;transition:none!important;animation:none!important;}body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]),body[data-dc-editor-on][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-editor-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-dragging]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]),body[data-dc-editor-move][data-dc-editor-brk]:not([data-dc-editor-overlay-hidden]) [data-dc-drag-follower]:not([data-dc-editor-overlay-root]) :not([data-dc-editor-overlay-root]){pointer-events:none!important;}body[data-dc-editor-move] :not([data-dc-editor-overlay-root]):not([data-dc-editor-overlay-root] *){pointer-events:auto!important;transition:none!important;animation-duration:0s!important;animation-delay:0s!important;}body[data-dc-editor-on][data-dc-editor-tool="rect"] *,body[data-dc-editor-on][data-dc-editor-tool="frame"] *,body[data-dc-editor-on][data-dc-editor-tool="grid"] *,body[data-dc-editor-on][data-dc-editor-tool="oval"] *,body[data-dc-editor-on][data-dc-editor-tool="arrow"] *,body[data-dc-editor-on][data-dc-editor-tool="line"] *{cursor:crosshair!important;}body[data-dc-editor-on][data-dc-editor-tool="text"] *{cursor:text!important;}body[data-dc-editor-on][data-dc-editor-tool="draw"] *{cursor:url('data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2216%22%20height=%2216%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20d=%22M2%2014l1-4%208-8a2.1%202.1%200%200%201%203%203l-8%208-4%201z%22%20fill=%22%23333%22%20stroke=%22%23fff%22%20stroke-width=%221%22/%3E%3C/svg%3E') 1 15, crosshair!important;}body[data-dc-editor-on] [data-dc-editor-editing][contenteditable],body[data-dc-editor-on] [data-dc-editor-editing][contenteditable] *,body[data-dc-editor-on] [data-dc-editor-svg-editing]{cursor:text!important;}body[data-dc-editor-on] [data-dc-editor-editing="import"]{outline:none!important;}html:not([data-dc-canvas]):has(body[data-dc-editor-on]:not([data-dc-capturing]) .sc-host){background:var(--dc-editor-backdrop,#ededeb);}html:not([data-dc-canvas]) body[data-dc-editor-on]:not([data-dc-capturing]):has(.sc-host){background:var(--dc-editor-backdrop,#ededeb);}html:not([data-dc-canvas]) body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host){min-height:calc(100vh - var(--dc-editor-host-vpad,0px));}html:not([data-dc-canvas]) body[data-dc-editor-on]:not([data-dc-capturing]) .sc-host:not(.sc-host .sc-host){background:var(--dc-editor-host-bg,#fff);}html[data-dc-frameless],html[data-dc-frameless] body[data-dc-editor-on],html[data-dc-frameless] body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host){background:transparent!important;min-height:0!important;}html:has(body[data-dc-capturing]),body[data-dc-capturing]{transition:none!important;}html[data-dc-canvas]{overflow:hidden;}html[data-dc-canvas] body[data-dc-editor-on] .sc-host:not(.sc-host .sc-host)::before{content:"";position:absolute;left:-100000px;top:-100000px;width:200000px;height:200000px;pointer-events:none;background:repeating-linear-gradient(45deg,var(--dc-editor-hatch-ink,rgba(0,0,0,.05)) 0 8px,transparent 8px 16px);clip-path:polygon(0 0,100% 0,100% 50%,50% 50%,50% 100%,0 100%);}</style></head>
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="LateStart"><div data-dc-tpl="3" style="width: 1366px; height: 720px; box-sizing: border-box; background: rgb(250, 250, 250); font-family: Inter, sans-serif; color: rgb(9, 9, 11); position: relative; overflow: hidden;">
+  <div data-dc-tpl="4" style="height: 52px; background: rgb(255, 255, 255); border-bottom: 1px solid rgb(228, 228, 231);"></div>
+  <div data-dc-tpl="5" style="position: absolute; top: 68px; left: 16px; right: 432px; height: 180px; background: rgb(255, 255, 255); border: 1px solid rgb(228, 228, 231); border-radius: 12px;"></div>
+  <div data-dc-tpl="6" style="position: absolute; inset: 260px 432px 16px 16px; background: rgb(24, 24, 27); border-radius: 12px;"></div>
+  <div data-dc-tpl="7" style="position: absolute; top: 68px; right: 16px; width: 400px; bottom: 16px; background: rgb(255, 255, 255); border: 1px solid rgb(228, 228, 231); border-radius: 12px;"></div>
+  <div data-dc-tpl="8" style="position: absolute; inset: 0px; background: rgba(9, 9, 11, 0.6);"></div>
+
+  <div data-dc-tpl="9" role="dialog" aria-labelledby="late-title" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; background: rgb(255, 255, 255); border-radius: 12px; border: 1px solid rgb(228, 228, 231); box-shadow: rgba(0, 0, 0, 0.25) 0px 20px 50px; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px;">
+    <div data-dc-tpl="10">
+      <h2 data-dc-tpl="11" id="late-title" style="margin: 0px; font-size: 20px; font-weight: 600;">You're starting 10 minutes late</h2>
+      <p data-dc-tpl="12" style="margin: 6px 0px 0px; font-size: 14px; color: rgb(113, 113, 122); line-height: 1.5;">It's 9:55. Sunday service was planned to start at 9:45. How should the timer pick up?</p>
+    </div>
+
+    <div data-dc-tpl="13" style="display: flex; flex-direction: column; gap: 10px;">
+      
+        <button data-dc-tpl="15" class="opt" style="border: 2px solid rgb(24, 24, 27); padding: 13px 15px; background: rgb(250, 250, 250);">
+          <span data-dc-tpl="16" style="width: 18px; height: 18px; border-radius: 50%; margin-top: 1px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 2px solid rgb(24, 24, 27);"><span data-dc-tpl="17" style="width: 8px; height: 8px; border-radius: 50%; background: rgb(24, 24, 27);"></span></span>
+          <span data-dc-tpl="18" style="flex: 1 1 0%; display: flex; flex-direction: column; gap: 4px;">
+            <span data-dc-tpl="19" style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;"><span class="sc-interp">Catch up to the clock</span>
+              <span data-dc-tpl="21" style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgb(244, 244, 245); color: rgb(63, 63, 70);">Recommended</span>
+            </span>
+            <span data-dc-tpl="22" style="font-size: 13px; color: rgb(82, 82, 91); line-height: 1.45;"><span class="sc-interp">Starts Praise and worship with 15:00 left, where the plan should be now. Welcome is marked skipped.</span></span>
+          </span>
+        </button>
+      
+        <button data-dc-tpl="15" class="opt" style="">
+          <span data-dc-tpl="16" style="width: 18px; height: 18px; border-radius: 50%; margin-top: 1px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 1px solid rgb(161, 161, 170);"><span data-dc-tpl="17" style=""></span></span>
+          <span data-dc-tpl="18" style="flex: 1 1 0%; display: flex; flex-direction: column; gap: 4px;">
+            <span data-dc-tpl="19" style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;"><span class="sc-interp">Start from the top</span>
+              
+            </span>
+            <span data-dc-tpl="22" style="font-size: 13px; color: rgb(82, 82, 91); line-height: 1.45;"><span class="sc-interp">Starts Welcome with its full 5:00. Every later item moves 10 minutes later.</span></span>
+          </span>
+        </button>
+      
+        <button data-dc-tpl="15" class="opt" style="">
+          <span data-dc-tpl="16" style="width: 18px; height: 18px; border-radius: 50%; margin-top: 1px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 1px solid rgb(161, 161, 170);"><span data-dc-tpl="17" style=""></span></span>
+          <span data-dc-tpl="18" style="flex: 1 1 0%; display: flex; flex-direction: column; gap: 4px;">
+            <span data-dc-tpl="19" style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;"><span class="sc-interp">Start from a chosen item</span>
+              
+            </span>
+            <span data-dc-tpl="22" style="font-size: 13px; color: rgb(82, 82, 91); line-height: 1.45;"><span class="sc-interp">Pick any item. It starts now with its full time.</span></span>
+          </span>
+        </button>
+      
+    </div>
+
+    
+
+    <div data-dc-tpl="30" style="display: flex; align-items: center; gap: 10px; padding-top: 4px;">
+      <span data-dc-tpl="31" style="flex: 1 1 0%; font-size: 13px; color: rgb(113, 113, 122);">Finish time: <b data-dc-tpl="32" style="color: rgb(9, 9, 11);"><span class="sc-interp">11:10</span></b></span>
+      <a data-dc-tpl="33" class="btn" href="Main.dc.html" style="text-decoration: none;">Cancel</a>
+      <a data-dc-tpl="34" class="btn btn-p" href="Main.dc.html" style="text-decoration: none;">Start</a>
+    </div>
+  </div></div></div></div>
+
+
+
+</body></html>
