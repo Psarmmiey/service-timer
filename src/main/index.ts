@@ -2,15 +2,21 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocke
 // electron-updater is CommonJS; a named ESM import crashes the main process on launch.
 import electronUpdater from "electron-updater";
 import { join } from "node:path";
+import QRCode from "qrcode";
 import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
-import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus } from "../shared/ipc";
+import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus, WebControlStatus } from "../shared/ipc";
+import type { Command } from "../engine";
+import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
 
 // Loaded on first use, not at startup.
 const autoUpdater = () => electronUpdater.autoUpdater;
+
+// Tests (and anyone running a second copy) can point the app at its own data folder.
+if (process.env.SERVICE_TIMER_USER_DATA) app.setPath("userData", process.env.SERVICE_TIMER_USER_DATA);
 
 const STAGE_BANNER = process.platform === "darwin"
   ? "No second screen found. Check the cable, and that the display is set to extend rather than mirror."
@@ -58,7 +64,13 @@ function isSettings(value: unknown): value is Settings {
     && (value.keepAwake === undefined || typeof value.keepAwake === "boolean")
     && (value.theme === undefined || value.theme === "system" || value.theme === "light" || value.theme === "dark")
     && (value.warnAtSeconds === undefined || (isInteger(value.warnAtSeconds) && value.warnAtSeconds >= 0 && value.warnAtSeconds <= 1800))
-    && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean");
+    && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean")
+    && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
+    && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
+    && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
+    && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
+    && (value.phoneControl === undefined || typeof value.phoneControl === "boolean")
+    && (value.phonePin === undefined || (typeof value.phonePin === "string" && /^\d{4}$/.test(value.phonePin)));
 }
 
 function isItem(value: unknown): value is Item {
@@ -127,6 +139,7 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "blackout":
       return typeof value.on === "boolean";
     case "skipAutoStartToday":
+    case "newPhonePin":
     case "identifyDisplays":
       return true;
     case "checkForUpdates":
@@ -158,7 +171,14 @@ let settings: Settings = {
   theme: "system",
   warnAtSeconds: 120,
   walkthroughSeen: false,
+  flashAtZero: true,
+  dangerAtSeconds: 30,
+  chime: "time-up",
+  overtimeSign: "plus",
+  phoneControl: false,
 };
+let webStatus: WebControlStatus = { enabled: false, running: false, urls: [], clients: 0 };
+let lastWebBroadcast = 0;
 /** Local date on which the operator turned auto-start off ("Turn off auto-start today"). */
 let autoStartSkippedOn: string | null = null;
 let updateStatus: UpdateStatus = {
@@ -219,7 +239,7 @@ function getDisplayStatus(): DisplayStatus {
 function toAppState(now: number): AppState {
   return {
     now,
-    view: derive(state, currentPlan, now, { defaultWarnSeconds: settings.warnAtSeconds }),
+    view: deriveView(now),
     plan: currentPlan,
     display: getDisplayStatus(),
     plans,
@@ -227,13 +247,101 @@ function toAppState(now: number): AppState {
     settings,
     update: { ...updateStatus, currentVersion: app.getVersion() },
     showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
+    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined },
   };
+}
+
+function deriveView(now: number) {
+  return derive(state, currentPlan, now, { defaultWarnSeconds: settings.warnAtSeconds, dangerSeconds: settings.dangerAtSeconds ?? 30 });
+}
+
+/** What the phone page needs: the live timer, never plans or settings. */
+function phoneSnapshot(now = Date.now()) {
+  const view = deriveView(now);
+  const plannedStart = view.scheduleRows[0]?.scheduledStart ?? now;
+  return {
+    now,
+    planName: currentPlan.name,
+    status: view.status,
+    paused: view.paused,
+    timeLeftMs: view.timeLeftMs,
+    colourBand: view.colourBand,
+    overtimeSign: settings.overtimeSign ?? "plus",
+    current: view.current ? { title: view.current.title, minutes: view.current.minutes } : null,
+    next: view.next ? { title: view.next.title, minutes: view.next.minutes } : null,
+    blackout: view.blackout,
+    message: view.message ?? null,
+    banner: view.banner ?? null,
+    plannedStart,
+    plannedFinish: view.plannedFinish,
+    projectedFinish: view.projectedFinish,
+    untilStartMs: plannedStart - now,
+    late: now - plannedStart > 60_000 && now < view.plannedFinish,
+  };
+}
+
+const webControl = createWebControl({
+  getSnapshot: () => phoneSnapshot(),
+  getPin: () => settings.phonePin ?? "",
+  onCommand: (command) => {
+    if (!isTimerCommand(command)) return false;
+    applyTimerCommand(command as Command);
+    return true;
+  },
+  onClientsChanged: (count) => {
+    webStatus = { ...webStatus, clients: count };
+    broadcastState();
+  },
+});
+
+/** Start or stop phone control to match the setting (FR-22). */
+async function syncWebControl(): Promise<void> {
+  if (!settings.phoneControl || (process.env.NODE_ENV === "test" && process.env.SERVICE_TIMER_E2E_WEB !== "1")) {
+    await webControl.stop();
+    webStatus = { enabled: Boolean(settings.phoneControl), running: false, urls: [], clients: 0 };
+    broadcastState();
+    return;
+  }
+  if (!settings.phonePin) {
+    settings = { ...settings, phonePin: newPin() };
+    store?.write("settings.json", settings);
+  }
+  try {
+    const port = await webControl.start(DEFAULT_PHONE_PORT);
+    const urls = lanAddresses().map((address) => `http://${address}:${port}`);
+    const qrSvg = urls[0] ? await QRCode.toString(urls[0], { type: "svg", margin: 1, errorCorrectionLevel: "M" }) : undefined;
+    webStatus = {
+      enabled: true,
+      running: true,
+      urls,
+      qrSvg,
+      clients: webControl.clientCount(),
+      error: urls.length ? undefined : "This laptop isn't on a Wi-Fi or wired network, so phones can't reach it.",
+    };
+  } catch (error) {
+    webStatus = { enabled: true, running: false, urls: [], clients: 0, error: `Phone control couldn't start: ${(error as Error).message}` };
+  }
+  broadcastState();
+}
+
+/** Apply a timer command from the control window or a phone. */
+function applyTimerCommand(command: Command): void {
+  const now = Date.now();
+  state = reduce(state, command, now, currentPlan);
+  persistRunState();
+  updatePowerBlocker();
+  broadcastState(now);
 }
 
 function broadcastState(now = Date.now()): void {
   const payload = toAppState(now);
   controlWindow?.webContents.send("state", payload);
   stageWindow?.webContents.send("state", payload);
+  // Phones get two updates a second, plus one straight after any change.
+  if (now - lastWebBroadcast >= 450) {
+    lastWebBroadcast = now;
+    webControl.broadcast();
+  }
 }
 
 function persistRunState(): void {
@@ -336,6 +444,8 @@ function createControlWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // The control window plays the time up chime without a click first.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 
@@ -543,10 +653,17 @@ function registerIpc(): void {
           armForToday(now);
         }
       } else if (payload.type === "saveSettings") {
-        settings = payload.settings;
+        const phoneWasOn = Boolean(settings.phoneControl);
+        // The PIN is managed here, not by the control window.
+        settings = { ...payload.settings, phonePin: settings.phonePin };
         app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
         store?.write("settings.json", settings);
         updatePlacement();
+        if (phoneWasOn !== Boolean(settings.phoneControl)) void syncWebControl();
+      } else if (payload.type === "newPhonePin") {
+        settings = { ...settings, phonePin: newPin() };
+        store?.write("settings.json", settings);
+        webControl.signOutAll();
       } else if (payload.type === "skipAutoStartToday") {
         if (state.status === "waiting") {
           autoStartSkippedOn = state.runDate;
@@ -559,6 +676,7 @@ function registerIpc(): void {
       } else {
         state = reduce(state, payload, now, currentPlan);
       }
+      lastWebBroadcast = 0;
       persistRunState();
       updatePowerBlocker();
       broadcastState(now);
@@ -647,6 +765,7 @@ if (!singleInstanceLock) {
     registerDisplayListeners();
     createWindows();
     startTickLoop();
+    void syncWebControl();
     updatePowerBlocker();
     setupUpdater();
     persistenceTimer = setInterval(persistRunState, 5_000);
@@ -661,6 +780,7 @@ if (!singleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
+  void webControl.stop();
   if (tickTimer) clearInterval(tickTimer);
   if (hotPlugTimer) clearTimeout(hotPlugTimer);
   if (updateCheckTimer) clearInterval(updateCheckTimer);
