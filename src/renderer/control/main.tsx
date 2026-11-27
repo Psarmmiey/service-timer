@@ -45,6 +45,73 @@ import {
 
 const MINUTE_MS = 60_000;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isTime(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month! - 1
+    && date.getUTCDate() === day;
+}
+
+function normaliseImportedPlan(value: unknown): Plan | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== "string" || !value.id.trim()) return null;
+  if (typeof value.name !== "string" || !value.name.trim()) return null;
+  if (!isTime(value.startTime)) return null;
+  if (!Array.isArray(value.days) || !value.days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)) return null;
+  if (typeof value.autoStart !== "boolean") return null;
+  if (value.autoAdvanceSeconds !== undefined && (!isFiniteNumber(value.autoAdvanceSeconds) || value.autoAdvanceSeconds < 0)) return null;
+  if (!Array.isArray(value.items)) return null;
+  if (typeof value.updatedAt !== "string" || !value.updatedAt.trim()) return null;
+  if (value.kind !== "recurring" && value.kind !== "oneOff") return null;
+  if (value.kind === "oneOff" && !isDate(value.date)) return null;
+  if (value.kind === "recurring" && value.date !== undefined && !isDate(value.date)) return null;
+  const days = value.days.filter((day): day is number => typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6);
+
+  const items: Item[] = [];
+  for (const item of value.items) {
+    if (!isRecord(item)) return null;
+    if (typeof item.id !== "string" || !item.id.trim()) return null;
+    if (typeof item.title !== "string" || !item.title.trim()) return null;
+    if (!isFiniteNumber(item.minutes) || item.minutes <= 0) return null;
+    if (item.note !== undefined && typeof item.note !== "string") return null;
+    if (item.warnAtSeconds !== undefined && (!isFiniteNumber(item.warnAtSeconds) || item.warnAtSeconds < 0)) return null;
+    items.push({
+      id: item.id.trim(),
+      title: item.title.trim(),
+      minutes: item.minutes,
+      ...(item.note !== undefined ? { note: item.note } : {}),
+      ...(item.warnAtSeconds !== undefined ? { warnAtSeconds: item.warnAtSeconds } : {}),
+    });
+  }
+
+  return {
+    id: value.id.trim(),
+    name: value.name.trim(),
+    startTime: value.startTime,
+    days: [...new Set(days)].sort((a, b) => a - b),
+    autoStart: value.autoStart,
+    ...(value.autoAdvanceSeconds !== undefined ? { autoAdvanceSeconds: value.autoAdvanceSeconds } : {}),
+    items,
+    updatedAt: value.updatedAt.trim(),
+    kind: value.kind,
+    ...(typeof value.date === "string" ? { date: value.date } : {}),
+  };
+}
+
 function send(command: TimerCommand) {
   window.api.send(command);
 }
@@ -372,8 +439,8 @@ function PlanEditorDialog({
     if (!file) return;
     void file.text().then((text) => {
       try {
-        const imported = JSON.parse(text) as Plan;
-        if (!imported.id || !Array.isArray(imported.items)) throw new Error("Invalid plan");
+        const imported = normaliseImportedPlan(JSON.parse(text));
+        if (!imported) throw new Error("Invalid plan");
         const next = [...plans, { ...imported, id: `${imported.id}-${Date.now()}` }];
         save(next, next[next.length - 1]!.id);
         setActiveId(next[next.length - 1]!.id);
@@ -554,7 +621,7 @@ function SettingsDialog({
           <section className="grid content-start gap-4 rounded-xl border border-zinc-200 p-4">
             <h2 className="font-semibold">Stage display</h2>
             <label className="grid gap-1 text-sm font-medium">Show timer on
-              <Select value={state.settings.stageDisplayId ? String(state.settings.stageDisplayId) : "automatic"} onValueChange={(value) => update({ stageDisplayId: value === "automatic" ? undefined : Number(value) })}>
+              <Select value={state.settings.stageDisplayId !== undefined ? String(state.settings.stageDisplayId) : "automatic"} onValueChange={(value) => update({ stageDisplayId: value === "automatic" ? undefined : Number(value) })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="automatic">Automatic · external display</SelectItem>
