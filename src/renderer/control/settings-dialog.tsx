@@ -108,6 +108,9 @@ export function SettingsDialog({
                   </SelectContent>
                 </Select>
               </Row>
+              <Row title="Item names in capitals" hint="For example SERMON instead of Sermon, so names read well from a distance.">
+                <Switch aria-label="Item names in capitals" checked={settings.itemNamesUppercase !== false} onCheckedChange={(itemNamesUppercase) => update({ itemNamesUppercase })} />
+              </Row>
               <Row title="Which screen is which?" hint="Shows a big number on every screen for a few seconds.">
                 <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
               </Row>

@@ -63,9 +63,11 @@ describe("phone control server", () => {
     const cookie = await login();
     expect((await post("/api/command", { type: "next" }, cookie)).status).toBe(204);
     expect((await post("/api/command", { type: "message", text: "Please wrap up" }, cookie)).status).toBe(204);
+    expect((await post("/api/command", { type: "doNext", index: 3 }, cookie)).status).toBe(204);
     expect((await post("/api/command", { type: "savePlans", plans: [] }, cookie)).status).toBe(403);
+    expect((await post("/api/command", { type: "editPlan", plan: {} }, cookie)).status).toBe(403);
     expect((await post("/api/command", { type: "saveSettings", settings: {} }, cookie)).status).toBe(403);
-    expect(received.map((command) => command.type)).toEqual(["next", "message"]);
+    expect(received.map((command) => command.type)).toEqual(["next", "message", "doNext"]);
   });
 
   it("streams state to signed-in phones and counts them", async () => {

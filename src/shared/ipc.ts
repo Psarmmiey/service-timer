@@ -13,6 +13,8 @@ export type Settings = {
   /** Default amber warning, in seconds, for items without their own (FR-3). */
   warnAtSeconds?: number;
   walkthroughSeen?: boolean;
+  /** Show item names in capitals on the stage. Default on. */
+  itemNamesUppercase?: boolean;
   /** Flash the TIME UP sign while an item is over time. Default on. */
   flashTimeUp?: boolean;
   /** Replaced by flashTimeUp; kept so older settings files still load. */

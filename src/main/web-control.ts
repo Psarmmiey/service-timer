@@ -21,6 +21,14 @@ export const PHONE_COMMANDS = new Set([
   "clearMessage",
   "blackout",
   "dismissBanner",
+  // Today's running order only (FR-14, FR-14a); the saved plan never changes from a phone.
+  "moveUp",
+  "moveDown",
+  "doNext",
+  "insertAfterCurrent",
+  "setRunItemMinutes",
+  "removeUpcoming",
+  "undoReorder",
 ]);
 
 export const DEFAULT_PHONE_PORT = 4280;

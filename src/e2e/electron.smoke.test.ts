@@ -82,7 +82,8 @@ describe("electron milestone 3 UI", () => {
     }
     await controlWindow.waitForSelector("button:has-text('Pause')");
     await stageWindow.waitForSelector('[aria-label="Stage display"]');
-    expect(await stageWindow.locator("body").innerText()).toContain("Welcome and opening prayer");
+    // Item names show in capitals on the stage by default.
+    expect(await stageWindow.locator("body").innerText()).toContain("WELCOME AND OPENING PRAYER");
 
     await controlWindow.getByText("Please wrap up", { exact: true }).click();
     await stageWindow.waitForSelector(".stage-message:has-text('Please wrap up')");

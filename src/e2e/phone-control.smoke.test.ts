@@ -88,9 +88,24 @@ describe("phone control", () => {
     abort.abort();
   }, 30_000);
 
+  it("edits today's running order from a phone", async () => {
+    const schedule = () => control.locator("aside").innerText();
+    // Default plan: Welcome, Praise and worship (now), Announcements, Offering, Sermon, Closing prayer.
+    expect((await post("/api/command", { type: "removeUpcoming", index: 3 })).status).toBe(204);
+    await expect.poll(async () => (await schedule()).includes("Offering"), { timeout: 5_000 }).toBe(false);
+    expect((await post("/api/command", { type: "undoReorder" })).status).toBe(204);
+    await expect.poll(async () => (await schedule()).includes("Offering"), { timeout: 5_000 }).toBe(true);
+    expect((await post("/api/command", { type: "setRunItemMinutes", index: 4, minutes: 30 })).status).toBe(204);
+    await expect.poll(async () => (await schedule()).includes("30 min"), { timeout: 5_000 }).toBe(true);
+    expect((await post("/api/command", { type: "doNext", index: 5 })).status).toBe(204);
+    await control.locator('[aria-label="Stage preview"] .stage-next:has-text("Closing prayer")').waitFor({ timeout: 5_000 });
+    await control.getByRole("button", { name: "Save to plan" }).waitFor();
+  });
+
   it("never lets a phone change plans or settings", async () => {
     expect((await post("/api/command", { type: "savePlans", plans: [], activePlanId: "x" })).status).toBe(403);
     expect((await post("/api/command", { type: "saveSettings", settings: {} })).status).toBe(403);
+    expect((await post("/api/command", { type: "editPlan", plan: {} })).status).toBe(403);
     expect((await post("/api/command", { type: "next" }, false)).status).toBe(401);
   });
 

@@ -412,3 +412,45 @@ describe("final red stage before zero", () => {
     expect(derive(state, referencePlan, at("09:49:31")).colourBand).toBe("warning");
   });
 });
+
+describe("run-only edits from the running order (phone or laptop)", () => {
+  const live = () => reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 1 }, at("09:50"), referencePlan);
+
+  it("changes an upcoming item's minutes for today only, with undo", () => {
+    let state = reduce(live(), { type: "setRunItemMinutes", index: 4, minutes: 30 }, at("09:55"), referencePlan);
+    expect(state.runItems?.find((item) => item.id === "sermon")?.minutes).toBe(30);
+    expect(referencePlan.items.find((item) => item.id === "sermon")?.minutes).toBe(40);
+    expect(derive(state, referencePlan, at("09:55")).projectedFinish).toBe(at("11:00"));
+    expect(derive(state, referencePlan, at("09:55")).hasRunChanges).toBe(true);
+    state = reduce(state, { type: "undoReorder" }, at("09:55:05"), referencePlan);
+    expect(state.runItems?.find((item) => item.id === "sermon")?.minutes).toBe(40);
+    // Undone means nothing to save, so "Save to plan" goes away.
+    expect(derive(state, referencePlan, at("09:55:05")).hasRunChanges).toBe(false);
+  });
+
+  it("removes an upcoming item for today only, with undo", () => {
+    let state = reduce(live(), { type: "removeUpcoming", index: 3 }, at("09:55"), referencePlan);
+    expect(state.runItems?.map((item) => item.id)).not.toContain("offering");
+    expect(derive(state, referencePlan, at("09:55")).next?.id).toBe("announcements");
+    state = reduce(state, { type: "undoReorder" }, at("09:55:05"), referencePlan);
+    expect(state.runItems?.map((item) => item.id)).toContain("offering");
+  });
+
+  it("never edits the current or finished items this way", () => {
+    const state = live();
+    expect(reduce(state, { type: "setRunItemMinutes", index: 1, minutes: 30 }, at("09:55"), referencePlan)).toBe(state);
+    expect(reduce(state, { type: "removeUpcoming", index: 0 }, at("09:55"), referencePlan)).toBe(state);
+    expect(reduce(state, { type: "setRunItemMinutes", index: 4, minutes: 0 }, at("09:55"), referencePlan)).toBe(state);
+  });
+
+  it("keeps today's minutes and removals when the saved plan is edited", () => {
+    let state = reduce(live(), { type: "setRunItemMinutes", index: 4, minutes: 30 }, at("09:55"), referencePlan);
+    state = reduce(state, { type: "removeUpcoming", index: 3 }, at("09:56"), referencePlan);
+    const renamed = { ...referencePlan, items: referenceItems.map((item) => item.id === "sermon" ? { ...item, title: "Sermon: Grace" } : item) };
+    state = reduce(state, { type: "editPlan", plan: renamed }, at("09:57"), referencePlan);
+    const sermon = state.runItems?.find((item) => item.id === "sermon");
+    expect(sermon?.title).toBe("Sermon: Grace");
+    expect(sermon?.minutes).toBe(30);
+    expect(state.runItems?.map((item) => item.id)).not.toContain("offering");
+  });
+});

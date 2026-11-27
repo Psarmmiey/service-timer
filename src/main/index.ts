@@ -67,6 +67,7 @@ function isSettings(value: unknown): value is Settings {
     && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean")
     && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
     && (value.flashTimeUp === undefined || typeof value.flashTimeUp === "boolean")
+    && (value.itemNamesUppercase === undefined || typeof value.itemNamesUppercase === "boolean")
     && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
     && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
     && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
@@ -134,7 +135,10 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "moveUp":
     case "moveDown":
     case "doNext":
+    case "removeUpcoming":
       return isInteger(value.index);
+    case "setRunItemMinutes":
+      return isInteger(value.index) && isFiniteNumber(value.minutes) && value.minutes >= 0.5 && value.minutes <= 600;
     case "message":
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
@@ -173,6 +177,7 @@ let settings: Settings = {
   warnAtSeconds: 120,
   walkthroughSeen: false,
   flashTimeUp: true,
+  itemNamesUppercase: true,
   dangerAtSeconds: 30,
   chime: "time-up",
   overtimeSign: "plus",
@@ -268,6 +273,19 @@ function phoneSnapshot(now = Date.now()) {
     timeLeftMs: view.timeLeftMs,
     colourBand: view.colourBand,
     flashTimeUp: settings.flashTimeUp !== false,
+    uppercase: settings.itemNamesUppercase !== false,
+    live: isLive(state),
+    rows: view.scheduleRows.map((row) => ({
+      index: row.index,
+      title: row.item.title,
+      minutes: row.item.minutes,
+      scheduledStart: row.scheduledStart,
+      actualStart: row.actualStart ?? null,
+      status: row.status,
+      skipped: row.skipped,
+    })),
+    undoAvailable: Boolean(state.undoReorder && state.undoReorder.expiresAt > now),
+    hasRunChanges: view.hasRunChanges,
     current: view.current ? { title: view.current.title, minutes: view.current.minutes } : null,
     next: view.next ? { title: view.next.title, minutes: view.next.minutes } : null,
     blackout: view.blackout,
@@ -334,10 +352,20 @@ function applyTimerCommand(command: Command): void {
   broadcastState(now);
 }
 
+/** A window can close between ticks (stage unplugged, app quitting); never send to a dead one. */
+function sendTo(win: BrowserWindow | null | undefined, payload: unknown): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
+  try {
+    win.webContents.send("state", payload);
+  } catch {
+    // The frame was torn down mid-send; the next tick goes to whatever window replaces it.
+  }
+}
+
 function broadcastState(now = Date.now()): void {
   const payload = toAppState(now);
-  controlWindow?.webContents.send("state", payload);
-  stageWindow?.webContents.send("state", payload);
+  sendTo(controlWindow, payload);
+  sendTo(stageWindow, payload);
   // Phones get two updates a second, plus one straight after any change.
   if (now - lastWebBroadcast >= 450) {
     lastWebBroadcast = now;

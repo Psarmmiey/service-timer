@@ -424,3 +424,11 @@ service-timer/
 - **Walkthrough (27 Nov 2026):** a short guided tour of the control window opens on first run (never during a service) and can be replayed from the ? button, the ? key or Settings, Help.
 - **Time up screen (27 Nov 2026, from user testing):** a tester read "+1:36" as time added, so time up now shows the item name, a large white TIME UP sign, and the overtime as "1:36 OVER" with no plus sign (design concept C). The sign flashes, swapping solid and outline so it stays readable; Settings, "Flash TIME UP" turns it off (on by default; reduced motion also stops it). Red digits show in the last 30 seconds before 0:00 (Off, 15 s, 30 s or 1 min), and a chime plays on the control laptop only, never the stage (Off, at time up, or at amber and time up). This replaces the earlier pulse, flash at 0:00 and +/- options. Applies to the stage, the laptop preview and the phone page.
 - **Phone control is in version 1 (27 Nov 2026):** FR-22 is built. It is off by default (Settings, Phone control). When on, the app serves a phone page on the local network on port 4280 (or the next free port), shown with a QR code and a 4-digit PIN. Phones can use Start, Next, Pause/Resume, ±1 min, Previous, stage messages and blackout, and never plans or settings. Five wrong PINs a minute per device are allowed; New PIN signs every phone out.
+
+### Decision: item names in capitals on the stage (27 Nov 2026)
+
+Item names on the stage (current item, Next, First) show in capitals by default so they read well from the back of the hall. Settings has a switch, "Item names in capitals", to turn it off. Plans keep the names as typed; only the stage display changes. The phone timer card follows the same setting.
+
+### Decision: running order on the phone (27 Nov 2026)
+
+The phone page has a second tab, Running order, showing today's items with times and Now/Done/Skipped. While the service is running, upcoming items can be moved up or down, made next, given more or fewer minutes, or removed, and a new item can be added after the current one. Every change is for today only, with a 10 second Undo, as on the laptop. Phones still cannot change saved plans or settings; to keep a change, someone presses Save to plan on the laptop. Save to plan only shows when today's order really differs from the plan (an undone change does not count).
