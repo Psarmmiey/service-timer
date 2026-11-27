@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, ClipboardPaste, Download, GripVertical, Plus
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Item, Plan } from "../../engine";
-import type { AppState } from "../../shared/ipc";
+import type { AppState, MenuFile } from "../../shared/ipc";
 import { csvToRunningOrderText } from "../../shared/running-order";
 import {
   Badge,
@@ -227,14 +227,19 @@ function ItemRow({
   );
 }
 
+/** Something the menu bar asked the plan editor to do once it is open. */
+export type PlanRequest = { kind: "paste" | "backup"; at: number } | { kind: "file"; at: number; file: MenuFile };
+
 export function PlanEditorDialog({
   state,
   open,
   onOpenChange,
+  request,
 }: {
   state: AppState;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  request?: PlanRequest;
 }) {
   const [plans, setPlans] = useState<Plan[]>(state.plans);
   // The plan being edited. This is not the active plan: only "Set as active plan" changes that.
@@ -358,43 +363,45 @@ export function PlanEditorDialog({
   /** .json is a Service Timer file; .csv and .txt are running orders to check before saving. */
   const importFile = (file: File | undefined) => {
     if (!file) return;
-    void file.text().then((text) => {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".csv")) {
-        const converted = csvToRunningOrderText(text);
-        if (converted.error) toast.error(converted.error);
-        else openPaste(converted.text);
-        return;
-      }
-      if (!lower.endsWith(".json")) {
-        openPaste(text);
-        return;
-      }
-      let read: ReturnType<typeof readPlansFile> = null;
-      try {
-        read = readPlansFile(JSON.parse(text));
-      } catch {
-        read = null;
-      }
-      if (!read) {
-        toast.error("That file isn't a Service Timer plan or backup.");
-        return;
-      }
-      flush();
-      const taken = plans.map((plan) => plan.name);
-      const imported = read.plans.map((plan) => {
-        const named = { ...plan, name: uniqueName(plan.name, taken) };
-        taken.push(named.name);
-        return named;
-      });
-      save([...plans, ...imported]);
-      setSelectedId(imported[0]!.id);
-      setDraft(imported[0]!);
-      const label = imported.length === 1 ? `Imported ${imported[0]!.name}` : `Imported ${imported.length} plans`;
-      toast.success(read.skipped ? `${label}. ${read.skipped} couldn't be read.` : label, {
-        duration: 10_000,
-        action: { label: "Undo", onClick: () => save(plans) },
-      });
+    void file.text().then((text) => importText(file.name, text));
+  };
+
+  const importText = (fileName: string, text: string) => {
+    const lower = fileName.toLowerCase();
+    if (lower.endsWith(".csv")) {
+      const converted = csvToRunningOrderText(text);
+      if (converted.error) toast.error(converted.error);
+      else openPaste(converted.text);
+      return;
+    }
+    if (!lower.endsWith(".json")) {
+      openPaste(text);
+      return;
+    }
+    let read: ReturnType<typeof readPlansFile> = null;
+    try {
+      read = readPlansFile(JSON.parse(text));
+    } catch {
+      read = null;
+    }
+    if (!read) {
+      toast.error("That file isn't a Service Timer plan or backup.");
+      return;
+    }
+    flush();
+    const taken = plans.map((plan) => plan.name);
+    const imported = read.plans.map((plan) => {
+      const named = { ...plan, name: uniqueName(plan.name, taken) };
+      taken.push(named.name);
+      return named;
+    });
+    save([...plans, ...imported]);
+    setSelectedId(imported[0]!.id);
+    setDraft(imported[0]!);
+    const label = imported.length === 1 ? `Imported ${imported[0]!.name}` : `Imported ${imported.length} plans`;
+    toast.success(read.skipped ? `${label}. ${read.skipped} couldn't be read.` : label, {
+      duration: 10_000,
+      action: { label: "Undo", onClick: () => save(plans) },
     });
   };
 
@@ -437,6 +444,16 @@ export function PlanEditorDialog({
       },
     });
   };
+
+  // Menu bar: File > Paste Running Order, Import or Back Up All Plans.
+  const handledRequest = useRef(0);
+  useEffect(() => {
+    if (!open || !request || request.at === handledRequest.current) return;
+    handledRequest.current = request.at;
+    if (request.kind === "paste") openPaste();
+    else if (request.kind === "backup") backUpAll();
+    else if (request.kind === "file") importText(request.file.name, request.file.text);
+  }, [open, request]);
 
   const deletePlan = () => {
     if (!draft || plans.length <= 1) return;

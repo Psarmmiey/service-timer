@@ -44,6 +44,25 @@ const WHATSAPP = `*RCCG CITY OF GOD FOR ALL NATIONS STIRLING*
 
 9. Closing prayers: 12.02pm - 1.05pm *(Pastor Victor)*`;
 
+/** Click a menu bar item by its label, as if chosen from the menu. */
+async function clickMenu(label: string) {
+  const found = await app.evaluate(({ Menu }, wanted) => {
+    const search = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const item of items) {
+        if (item.label === wanted) return item;
+        const inner = item.submenu ? search(item.submenu.items) : undefined;
+        if (inner) return inner;
+      }
+      return undefined;
+    };
+    const item = search(Menu.getApplicationMenu()?.items ?? []);
+    if (!item) return false;
+    item.click();
+    return true;
+  }, label);
+  expect(found).toBe(true);
+}
+
 const plansDialog = () => control.getByRole("dialog", { name: "Service plans" });
 const pasteDialog = () => control.getByRole("dialog", { name: "Paste a running order" });
 
@@ -120,6 +139,35 @@ describe("importing plans", () => {
     // Names that already exist get a number rather than replacing anything.
     await plansDialog().getByRole("button", { name: /Sunday service, 15 Nov \(2\)/ }).waitFor();
     expect(await plansDialog().locator("aside button:has(span.text-sm)").count()).toBe(before * 2);
+  }, 30_000);
+
+  it("opens dialogs from the menu bar", async () => {
+    await control.keyboard.press("Escape");
+    await plansDialog().waitFor({ state: "detached" });
+    await clickMenu("Paste Running Order…");
+    await pasteDialog().waitFor();
+    if (shots) await control.screenshot({ path: join(shots, "menu-paste.png") });
+    await pasteDialog().getByRole("button", { name: "Cancel" }).click();
+    await control.keyboard.press("Escape");
+    await plansDialog().waitFor({ state: "detached" });
+    await clickMenu("Keyboard Shortcuts");
+    const shortcuts = control.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await shortcuts.getByText("Blackout the stage, or bring it back").waitFor();
+    if (shots) await control.screenshot({ path: join(shots, "menu-shortcuts.png") });
+    await control.keyboard.press("Escape");
+    await shortcuts.waitFor({ state: "detached" });
+    await clickMenu("Dark");
+    await control.waitForFunction(() => document.documentElement.classList.contains("dark"));
+    await clickMenu("Match the Computer");
+    if (shots) {
+      // A 1366x768 Windows laptop with the title bar and menu bar visible leaves about 669 px.
+      await control.setViewportSize({ width: 1366, height: 669 });
+      await control.waitForTimeout(300);
+      await control.screenshot({ path: join(shots, "windows-height.png") });
+      await control.setViewportSize({ width: 1366, height: 768 });
+    }
+    await control.getByRole("button", { name: "Plans", exact: true }).click();
+    await plansDialog().waitFor();
   }, 30_000);
 
   it("shows a plan on the schedule as soon as it is set active, even after a service has ended", async () => {

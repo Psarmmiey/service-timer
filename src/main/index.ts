@@ -1,13 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell, Tray } from "electron";
 // electron-updater is CommonJS; a named ESM import crashes the main process on launch.
 import electronUpdater from "electron-updater";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import QRCode from "qrcode";
 import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
-import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus, WebControlStatus } from "../shared/ipc";
+import type { AppState, DisplayStatus, MenuAction, Settings, TimerCommand, UpdateStatus, WebControlStatus } from "../shared/ipc";
+import { menuTemplate } from "./menu";
 import type { Command } from "../engine";
 import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
@@ -365,7 +367,70 @@ function sendTo(win: BrowserWindow | null | undefined, payload: unknown): void {
   }
 }
 
+let menuKey = "";
+
+/** About box: the Mac has its own panel; Windows gets a simple dialog with the logo. */
+function showAbout(): void {
+  const detail = `Version ${app.getVersion()}\nA stage countdown timer for church services.\nRCCG City of God For All Nations, Stirling.`;
+  if (process.platform === "darwin") {
+    app.setAboutPanelOptions({ applicationName: "Service Timer", applicationVersion: app.getVersion(), copyright: "RCCG City of God For All Nations, Stirling" });
+    app.showAboutPanel();
+    return;
+  }
+  const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "build"), app.isPackaged ? "tray.ico" : "icon.png"));
+  void dialog.showMessageBox({ type: "info", title: "About Service Timer", message: "Service Timer", detail, icon, buttons: ["OK"] });
+}
+
+function sendMenuAction(action: MenuAction): void {
+  focusControlWindow();
+  if (!controlWindow || controlWindow.isDestroyed()) return;
+  if (action === "importPlans") {
+    // A file picker needs a click inside the page, so the menu opens it here and passes the text on.
+    const window = controlWindow;
+    void dialog.showOpenDialog(window, {
+      title: "Import a plan, backup or running order",
+      properties: ["openFile"],
+      filters: [{ name: "Plans and running orders", extensions: ["json", "csv", "txt"] }],
+    }).then(async ({ canceled, filePaths }) => {
+      const path = filePaths[0];
+      if (canceled || !path || window.isDestroyed()) return;
+      const text = await readFile(path, "utf8");
+      if (text.length > 2_000_000) return;
+      window.webContents.send("menu", "importFile", { name: basename(path), text });
+    }).catch((error: unknown) => console.error("Import failed", error));
+    return;
+  }
+  controlWindow.webContents.send("menu", action);
+}
+
+/** Rebuild the menu bar only when something it shows has changed (labels, ticks, screens). */
+function refreshMenu(now = Date.now()): void {
+  const view = deriveView(now);
+  const displays = getDisplayStatus().displays;
+  const live = isLive(state);
+  const key = JSON.stringify([state.status, live, view.blackout, Boolean(view.message), settings.theme, settings.stageDisplayId, displays.map((d) => [d.id, d.label]), updateStatus.portable, settings]);
+  if (key === menuKey) return;
+  menuKey = key;
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate({
+    platform: process.platform,
+    appName: "Service Timer",
+    isDev: !app.isPackaged,
+    status: state.status,
+    live,
+    blackout: Boolean(view.blackout),
+    hasMessage: Boolean(view.message),
+    settings,
+    displays,
+    canUpdate: app.isPackaged && !updateStatus.portable,
+    command: (command) => handleCommand(command),
+    ui: sendMenuAction,
+    about: showAbout,
+    openLink: (url) => void shell.openExternal(url),
+  })));
+}
+
 function broadcastState(now = Date.now()): void {
+  refreshMenu(now);
   const payload = toAppState(now);
   sendTo(controlWindow, payload);
   sendTo(stageWindow, payload);
@@ -485,7 +550,8 @@ function createControlWindow(): BrowserWindow {
     height: 720,
     minWidth: 1200,
     minHeight: 680,
-    autoHideMenuBar: true,
+    // Windows: keep the menu bar visible so File, Timer and Help are easy to find.
+    autoHideMenuBar: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -561,6 +627,8 @@ function createStageWindow(): BrowserWindow {
   } else {
     void window.loadFile(join(__dirname, "../renderer/stage.html"));
   }
+  // The stage never shows a menu bar, even on Windows.
+  window.removeMenu();
 
   window.webContents.on("did-finish-load", () => {
     applyStageWindowMode(window);
@@ -674,75 +742,78 @@ function restartToUpdate(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.on("command", (_, payload: unknown) => {
-    if (!isTimerCommand(payload)) return;
+  ipcMain.on("command", (_, payload: unknown) => handleCommand(payload));
+}
 
-    try {
-      const now = Date.now();
-      if (payload.type === "identifyDisplays") {
-        identifyDisplays();
-      } else if (payload.type === "savePlans") {
-        if (!payload.plans.length) return;
-        plans = payload.plans;
-        const previousActiveId = activePlanId;
-        activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
-        // "Set as active plan" with nothing running: show that plan now, even after a finished service.
-        const pickedPlan = activePlanId !== previousActiveId && !isLive(state);
-        if (pickedPlan) chosenForToday = { planId: activePlanId, date: localDateString(new Date(now)) };
-        store?.write("plans.json", { plans, activePlanId });
-        if (isLive(state)) {
-          // A live run keeps its own plan; edits to that plan apply live (FR-13).
-          const running = plans.find((plan) => plan.id === state.planId);
-          if (running) {
-            const previous = currentPlan;
-            currentPlan = running;
-            state = reduce(state, { type: "editPlan", plan: running }, now, previous);
-          }
-        } else if (state.status === "finished" && !pickedPlan) {
-          currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
-        } else {
-          armForToday(now);
+/** Apply a command from the control window or the menu bar. */
+function handleCommand(payload: unknown): void {
+  if (!isTimerCommand(payload)) return;
+
+  try {
+    const now = Date.now();
+    if (payload.type === "identifyDisplays") {
+      identifyDisplays();
+    } else if (payload.type === "savePlans") {
+      if (!payload.plans.length) return;
+      plans = payload.plans;
+      const previousActiveId = activePlanId;
+      activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
+      // "Set as active plan" with nothing running: show that plan now, even after a finished service.
+      const pickedPlan = activePlanId !== previousActiveId && !isLive(state);
+      if (pickedPlan) chosenForToday = { planId: activePlanId, date: localDateString(new Date(now)) };
+      store?.write("plans.json", { plans, activePlanId });
+      if (isLive(state)) {
+        // A live run keeps its own plan; edits to that plan apply live (FR-13).
+        const running = plans.find((plan) => plan.id === state.planId);
+        if (running) {
+          const previous = currentPlan;
+          currentPlan = running;
+          state = reduce(state, { type: "editPlan", plan: running }, now, previous);
         }
-      } else if (payload.type === "saveSettings") {
-        const phoneWasOn = Boolean(settings.phoneControl);
-        // The PIN is managed here, not by the control window.
-        settings = { ...payload.settings, phonePin: settings.phonePin };
-        app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
-        store?.write("settings.json", settings);
-        updatePlacement();
-        if (phoneWasOn !== Boolean(settings.phoneControl)) void syncWebControl();
-      } else if (payload.type === "newPhonePin") {
+      } else if (state.status === "finished" && !pickedPlan) {
+        currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
+      } else {
+        armForToday(now);
+      }
+    } else if (payload.type === "saveSettings") {
+      const phoneWasOn = Boolean(settings.phoneControl);
+      // The PIN is managed here, not by the control window.
+      settings = { ...payload.settings, phonePin: settings.phonePin };
+      app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+      store?.write("settings.json", settings);
+      updatePlacement();
+      if (phoneWasOn !== Boolean(settings.phoneControl)) void syncWebControl();
+    } else if (payload.type === "newPhonePin") {
+      settings = { ...settings, phonePin: newPin() };
+      store?.write("settings.json", settings);
+      webControl.signOutAll();
+    } else if (payload.type === "disconnectPhone") {
+      webControl.disconnect(payload.id);
+      if (payload.newPin) {
         settings = { ...settings, phonePin: newPin() };
         store?.write("settings.json", settings);
         webControl.signOutAll();
-      } else if (payload.type === "disconnectPhone") {
-        webControl.disconnect(payload.id);
-        if (payload.newPin) {
-          settings = { ...settings, phonePin: newPin() };
-          store?.write("settings.json", settings);
-          webControl.signOutAll();
-        }
-        broadcastState();
-      } else if (payload.type === "skipAutoStartToday") {
-        if (state.status === "waiting") {
-          autoStartSkippedOn = state.runDate;
-          state = { ...state, status: "idle" };
-        }
-      } else if (payload.type === "checkForUpdates") {
-        checkForUpdates();
-      } else if (payload.type === "restartToUpdate") {
-        restartToUpdate();
-      } else {
-        state = reduce(state, payload, now, currentPlan);
       }
-      lastWebBroadcast = 0;
-      persistRunState();
-      updatePowerBlocker();
-      broadcastState(now);
-    } catch (error) {
-      console.error("Ignoring invalid timer command", error);
+      broadcastState();
+    } else if (payload.type === "skipAutoStartToday") {
+      if (state.status === "waiting") {
+        autoStartSkippedOn = state.runDate;
+        state = { ...state, status: "idle" };
+      }
+    } else if (payload.type === "checkForUpdates") {
+      checkForUpdates();
+    } else if (payload.type === "restartToUpdate") {
+      restartToUpdate();
+    } else {
+      state = reduce(state, payload, now, currentPlan);
     }
-  });
+    lastWebBroadcast = 0;
+    persistRunState();
+    updatePowerBlocker();
+    broadcastState(now);
+  } catch (error) {
+    console.error("Ignoring invalid timer command", error);
+  }
 }
 
 function registerDisplayListeners(): void {
@@ -759,11 +830,11 @@ function createWindows(): void {
 
 function createTray(): void {
   if (tray) return;
-  const trayIcon = nativeImage.createFromPath(join(
-    app.isPackaged ? process.resourcesPath : app.getAppPath(),
-    app.isPackaged ? "tray-icon.svg" : "resources/tray-icon.svg",
-  ));
-  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createFromNamedImage("NSApplicationIcon") : trayIcon);
+  // Windows wants an .ico; a Mac wants a black "Template" image it can tint for light and dark menu bars.
+  const iconFile = process.platform === "win32" ? "tray.ico" : process.platform === "darwin" ? "trayTemplate.png" : "trayTemplate@2x.png";
+  const trayIcon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), iconFile));
+  if (process.platform === "darwin") trayIcon.setTemplateImage(true);
+  tray = new Tray(trayIcon);
   const menu = Menu.buildFromTemplate([
     { label: "Show Service Timer", click: () => focusControlWindow() },
     { label: "Quit", click: () => app.quit() },
