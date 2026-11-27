@@ -107,6 +107,8 @@ describe("electron milestone 3 UI", () => {
   }, 30_000);
 
   it("keeps countdown digits large at supported stage resolutions", async () => {
+    await controlWindow.keyboard.press("ArrowLeft");
+    await stageWindow.waitForSelector(".stage-next");
     const sizes = [
       { width: 1024, height: 768 },
       { width: 1920, height: 1080 },
@@ -118,9 +120,15 @@ describe("electron milestone 3 UI", () => {
     for (const size of sizes) {
       await stageWindow.setViewportSize(size);
       const bounds = await stageWindow.locator(".stage-digits").boundingBox();
+      const titleBounds = await stageWindow.locator(".stage-title").boundingBox();
+      const nextBounds = await stageWindow.locator(".stage-next").boundingBox();
       expect(bounds).toBeTruthy();
+      expect(titleBounds).toBeTruthy();
+      expect(nextBounds).toBeTruthy();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
+      expect(titleBounds!.y).toBeGreaterThanOrEqual(0);
+      expect(nextBounds!.y + nextBounds!.height).toBeLessThanOrEqual(size.height);
       if (size.width === 1920) {
         expect(bounds!.height).toBeGreaterThanOrEqual(size.height * 0.6);
       }
