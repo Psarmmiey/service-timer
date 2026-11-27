@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
+import { autoUpdater } from "electron-updater";
 import { join } from "node:path";
 import { createIdleState, createWaitingState, derive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
-import type { AppState, DisplayStatus, Settings, TimerCommand } from "../shared/ipc";
+import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus } from "../shared/ipc";
+import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
 
 const STAGE_BANNER = "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
 const TICK_MS = 250;
@@ -46,6 +48,7 @@ function isSettings(value: unknown): value is Settings {
     && typeof value.pulse === "boolean"
     && typeof value.openAtLogin === "boolean"
     && typeof value.trayOnClose === "boolean"
+    && (value.automaticUpdates === undefined || typeof value.automaticUpdates === "boolean")
     && (value.keepAwake === undefined || typeof value.keepAwake === "boolean");
 }
 
@@ -113,6 +116,9 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return typeof value.on === "boolean";
     case "identifyDisplays":
       return true;
+    case "checkForUpdates":
+    case "restartToUpdate":
+      return true;
     case "tick":
       return true;
     default:
@@ -135,7 +141,14 @@ let settings: Settings = {
   openAtLogin: true,
   trayOnClose: false,
   keepAwake: true,
+  automaticUpdates: true,
 };
+let updateStatus: UpdateStatus = {
+  state: "idle",
+  portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
+};
+let updateCheckTimer: NodeJS.Timeout | null = null;
+let downloadedUpdateVersion: string | undefined;
 let store: JsonStore | null = null;
 let tray: Tray | null = null;
 let powerBlockerId: number | null = null;
@@ -187,6 +200,7 @@ function toAppState(now: number): AppState {
     plans,
     activePlanId,
     settings,
+    update: updateStatus,
   };
 }
 
@@ -396,6 +410,55 @@ function identifyDisplays(): void {
   });
 }
 
+function checkForUpdates(): void {
+  if (updateStatus.portable) return;
+  if (!settings.automaticUpdates && updateStatus.state !== "idle") return;
+  if (!canCheckForUpdates(state.status)) return;
+  updateStatus = { ...updateStatus, state: "checking", message: undefined };
+  broadcastState();
+  void autoUpdater.checkForUpdates();
+}
+
+function setupUpdater(): void {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on("checking-for-update", () => {
+    updateStatus = { ...updateStatus, state: "checking" };
+    broadcastState();
+  });
+  autoUpdater.on("update-available", (info) => {
+    updateStatus = { ...updateStatus, state: "downloading", version: info.version };
+    broadcastState();
+  });
+  autoUpdater.on("update-not-available", () => {
+    updateStatus = { ...updateStatus, state: "idle", message: "No updates available" };
+    broadcastState();
+  });
+  autoUpdater.on("update-downloaded", (event) => {
+    downloadedUpdateVersion = event.version;
+    updateStatus = { ...updateStatus, state: "ready", version: event.version };
+    broadcastState();
+  });
+  autoUpdater.on("error", (error) => {
+    updateStatus = { ...updateStatus, state: "error", message: error.message };
+    broadcastState();
+  });
+
+  if (app.isPackaged && !updateStatus.portable && settings.automaticUpdates) {
+    checkForUpdates();
+  }
+  if (!updateStatus.portable) {
+    updateCheckTimer = setInterval(() => {
+      if (settings.automaticUpdates) checkForUpdates();
+    }, UPDATE_CHECK_INTERVAL_MS);
+  }
+}
+
+function restartToUpdate(): void {
+  if (!downloadedUpdateVersion || !canInstallUpdate(state.status)) return;
+  autoUpdater.quitAndInstall(false, true);
+}
+
 function registerIpc(): void {
   ipcMain.on("command", (_, payload: unknown) => {
     if (!isTimerCommand(payload)) return;
@@ -415,6 +478,10 @@ function registerIpc(): void {
         app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
         store?.write("settings.json", settings);
         updatePlacement();
+      } else if (payload.type === "checkForUpdates") {
+        checkForUpdates();
+      } else if (payload.type === "restartToUpdate") {
+        restartToUpdate();
       } else {
         state = reduce(state, payload, now, currentPlan);
       }
@@ -508,6 +575,7 @@ if (!singleInstanceLock) {
     createWindows();
     startTickLoop();
     updatePowerBlocker();
+    setupUpdater();
     persistenceTimer = setInterval(persistRunState, 5_000);
 
     app.on("activate", () => {
@@ -522,6 +590,7 @@ if (!singleInstanceLock) {
 app.on("window-all-closed", () => {
   if (tickTimer) clearInterval(tickTimer);
   if (hotPlugTimer) clearTimeout(hotPlugTimer);
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
   if (persistenceTimer) clearInterval(persistenceTimer);
   persistRunState();
   if (powerBlockerId !== null) {
@@ -529,4 +598,10 @@ app.on("window-all-closed", () => {
     powerBlockerId = null;
   }
   app.quit();
+});
+
+app.on("before-quit", () => {
+  if (downloadedUpdateVersion && canInstallUpdate(state.status)) {
+    autoUpdater.quitAndInstall(false, true);
+  }
 });
