@@ -13,6 +13,8 @@ export type Settings = {
   /** Default amber warning, in seconds, for items without their own (FR-3). */
   warnAtSeconds?: number;
   walkthroughSeen?: boolean;
+  /** Show item names in capitals on the stage. Default on. */
+  itemNamesUppercase?: boolean;
   /** Flash the TIME UP sign while an item is over time. Default on. */
   flashTimeUp?: boolean;
   /** Replaced by flashTimeUp; kept so older settings files still load. */
@@ -29,6 +31,18 @@ export type Settings = {
   phonePin?: string;
 };
 
+/** What the laptop sees about each signed-in phone. Never includes the session token. */
+export type PhoneInfo = {
+  id: string;
+  name: string;
+  device: string;
+  address: string;
+  connected: boolean;
+  signedInAt: number;
+  lastSeenAt: number;
+  lastAction?: { label: string; at: number };
+};
+
 export type WebControlStatus = {
   enabled: boolean;
   running: boolean;
@@ -36,6 +50,8 @@ export type WebControlStatus = {
   qrSvg?: string;
   pin?: string;
   clients: number;
+  /** Signed-in phones, connected ones first. */
+  phones?: PhoneInfo[];
   error?: string;
 };
 
@@ -55,6 +71,8 @@ export type TimerCommand =
   | { type: "checkForUpdates" }
   | { type: "skipAutoStartToday" }
   | { type: "newPhonePin" }
+  /** Sign one phone out; with newPin, also change the PIN so it can't sign straight back in. */
+  | { type: "disconnectPhone"; id: string; newPin?: boolean }
   | { type: "restartToUpdate" };
 
 export type DisplayOption = {

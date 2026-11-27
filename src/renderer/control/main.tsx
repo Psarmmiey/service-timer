@@ -46,7 +46,7 @@ import {
 import { useChime } from "./chime";
 import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
 import { PlanEditorDialog } from "./plan-editor";
-import { SettingsDialog } from "./settings-dialog";
+import { SettingsDialog, type Section as SettingsSection } from "./settings-dialog";
 import { useTheme } from "./theme";
 import { Walkthrough } from "./walkthrough";
 
@@ -100,6 +100,35 @@ function ConfirmDialog({ action, onClose }: { action: "restart" | "stop" | null;
             }}
           >
             {restarting ? "Restart item" : "Stop timer"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type StartNowTarget = { index: number; title: string; minutes: number; ending?: string; between: string[] };
+
+function StartNowDialog({ target, onClose }: { target: StartNowTarget | null; onClose: () => void }) {
+  const between = target?.between ?? [];
+  return (
+    <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogTitle>Start {target?.title} now?</DialogTitle>
+        <DialogDescription>
+          {target?.ending ? `${target.ending} ends now and ` : ""}{target?.title} starts with its full {target?.minutes} min.
+          {between.length ? ` ${between.join(", ")} ${between.length === 1 ? "stays" : "stay"} in the order for later.` : ""}
+        </DialogDescription>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="default"
+            onClick={() => {
+              if (target) send({ type: "startNow", index: target.index });
+              onClose();
+            }}
+          >
+            Start now
           </Button>
         </div>
       </DialogContent>
@@ -276,11 +305,34 @@ const STATUS_STYLE: Record<string, { label: string; className: string }> = {
 function ControlApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [confirm, setConfirm] = useState<"restart" | "stop" | null>(null);
+  const [startNowTarget, setStartNowTarget] = useState<StartNowTarget | null>(null);
   const [startDialog, setStartDialog] = useState<"late" | "choose" | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  const openSettings = (section?: SettingsSection) => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  };
+  // Say who has just connected from a phone, so a stranger stands out (FR-22).
+  const seenPhones = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!state) return;
+    const connected = (state.web.phones ?? []).filter((phone) => phone.connected);
+    const previous = seenPhones.current;
+    seenPhones.current = new Set(connected.map((phone) => phone.id));
+    if (!previous) return;
+    for (const phone of connected) {
+      if (!previous.has(phone.id)) {
+        toast(`${phone.name} connected from a phone`, {
+          description: `${phone.device} · ${phone.address}`,
+          action: { label: "See phones", onClick: () => openSettings("phone") },
+        });
+      }
+    }
+  }, [state?.web.phones]);
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
@@ -439,9 +491,18 @@ function ControlApp() {
           <div className="flex items-center gap-2" data-tour="status">
             <Badge className={status.className}>{status.label}</Badge>
             {live ? <Badge className={behind ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" : ""}>{formatBehindAhead(view.behindAheadMs)}</Badge> : null}
-            {view.blackout ? <Badge className="border-zinc-950 bg-zinc-950 text-zinc-50"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
+            {view.blackout ? <Badge className="border-red-700 bg-red-700 text-[#fff]"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
             {state.web.running && state.web.clients > 0 ? (
-              <Badge title="Phones connected to phone control"><Smartphone className="mr-1 size-3" /> {state.web.clients} phone{state.web.clients === 1 ? "" : "s"}</Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 rounded-full px-2 text-xs font-medium"
+                title={(state.web.phones ?? []).filter((phone) => phone.connected).map((phone) => phone.name).join(", ")}
+                aria-label="Connected phones"
+                onClick={() => openSettings("phone")}
+              >
+                <Smartphone className="size-3" /> {state.web.clients} phone{state.web.clients === 1 ? "" : "s"}
+              </Button>
             ) : null}
           </div>
           <div className="flex-1" />
@@ -450,7 +511,7 @@ function ControlApp() {
           <Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)} data-tour="plans">Plans</Button>
           <Tooltip label="Walkthrough (?)"><Button aria-label="Walkthrough" variant="ghost" size="icon" onClick={() => setWalkthroughOpen(true)}><HelpCircle className="size-[18px]" /></Button></Tooltip>
           <Tooltip label="Settings">
-            <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => setSettingsOpen(true)} data-tour="settings">
+            <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => openSettings()} data-tour="settings">
               <Settings className="size-[18px]" />
               {state.update.state === "ready" ? <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-blue-500" aria-label="Update ready" /> : null}
             </Button>
@@ -551,6 +612,8 @@ function ControlApp() {
               <Button
                 className="h-[64px] w-[180px] text-base font-semibold"
                 data-tour="pause"
+                // Amber while paused, so a forgotten pause is hard to miss.
+                variant={view.paused && live ? "attention" : "outline"}
                 disabled={!live}
                 onClick={() => toggleRef.current(state)}
               >
@@ -585,10 +648,11 @@ function ControlApp() {
                 size="sm"
                 data-tour="blackout"
                 aria-pressed={view.blackout}
-                variant={view.blackout ? "default" : "outline"}
+                variant={view.blackout ? "destructive" : "outline"}
+                aria-label={view.blackout ? "Stage blacked out. Show the timer" : "Blackout"}
                 onClick={() => send({ type: "blackout", on: !view.blackout })}
               >
-                <EyeOff className="size-4" /> {view.blackout ? "Show timer" : "Blackout"}
+                <EyeOff className="size-4" /> {view.blackout ? "Blacked out · Show timer" : "Blackout"}
               </Button>
               <span className="ml-auto hidden text-[11px] text-zinc-500 xl:inline">→ next · Space pause · +/− minute · B blackout · ? help</span>
             </div>
@@ -679,9 +743,16 @@ function ControlApp() {
                         <Tooltip label="Move up"><Button aria-label={`Move ${row.item.title} up`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveUp", index: row.index }, "Item moved up")}><ArrowUp className="size-4" /></Button></Tooltip>
                         <Tooltip label="Move down"><Button aria-label={`Move ${row.item.title} down`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveDown", index: row.index }, "Item moved down")}><ArrowDown className="size-4" /></Button></Tooltip>
                         <Button aria-label={`Do ${row.item.title} next`} size="sm" className="h-8 px-2" onClick={() => reorder({ type: "doNext", index: row.index }, `${row.item.title} is next`)}>Do next</Button>
+                        <Tooltip label="Start now"><Button aria-label={`Start ${row.item.title} now`} variant="ghost" size="icon" className="size-8" onClick={() => setStartNowTarget({
+                          index: row.index,
+                          title: row.item.title,
+                          minutes: row.item.minutes,
+                          ending: view.current?.title,
+                          between: view.scheduleRows.filter((other) => other.status === "upcoming" && other.index < row.index).map((other) => other.item.title),
+                        })}><Play className="size-4" /></Button></Tooltip>
                       </span>
                     ) : (
-                      <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
+                      <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current && view.paused ? "border-amber-400 bg-amber-400 text-[#18181b]" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
                         {current ? (overrun ? "Time up" : view.paused ? "Paused" : "Now") : row.skipped ? "Skipped" : row.status === "done" ? <><Check className="mr-1 size-3" /> Done</> : `${row.item.minutes} min`}
                       </Badge>
                     )}
@@ -698,11 +769,12 @@ function ControlApp() {
       </main>
 
       <ConfirmDialog action={confirm} onClose={() => setConfirm(null)} />
+      <StartNowDialog target={startNowTarget} onClose={() => setStartNowTarget(null)} />
       <StartDialog state={state} open={startDialog !== null} mode={startDialog ?? "late"} onOpenChange={(open) => !open && setStartDialog(null)} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
       <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} />
-      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
+      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} startSection={settingsSection} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
       <Walkthrough open={walkthroughOpen} onClose={closeWalkthrough} />
       <Toaster theme={theme} />
     </TooltipProvider>

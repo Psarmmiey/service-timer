@@ -85,21 +85,23 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   }
 
   const beforeStart = untilStartMs > 0;
+  const caps = state.settings.itemNamesUppercase !== false;
+  const name = (title: string | undefined) => (title && caps ? title.toUpperCase() : title ?? "");
   const title = finished
     ? "Service ended"
     : countdown
         ? `${state.plan.name} starts in`
         : clockOnly
           ? beforeStart && firstRow ? `${state.plan.name} starts at ${formatClock(firstRow.scheduledStart)}` : state.plan.name
-          : view.current?.title ?? "Service";
+          : name(view.current?.title) || "Service";
   const next = countdown || (clockOnly && beforeStart)
     ? firstRow
-      ? `First: ${firstRow.item.title} · ${formatClock(firstRow.scheduledStart)}`
+      ? `First: ${name(firstRow.item.title)} · ${formatClock(firstRow.scheduledStart)}`
       : ""
     : clockOnly || overrun
       ? ""
       : view.next
-        ? `Next: ${view.next.title} (${view.next.minutes} min)`
+        ? `Next: ${name(view.next.title)} (${view.next.minutes} min)`
         : "Final item";
 
   return (
@@ -114,7 +116,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       {clockOnly ? null : <span className="stage-clock">{formatClock(state.now)}</span>}
       <div className="stage-top">
         {overrun
-          ? <div className="stage-item" title={view.current?.title}>{view.current?.title}</div>
+          ? <div className="stage-item" data-caps={caps} title={view.current?.title}>{view.current?.title}</div>
           : <div className="stage-title" title={title}>{title}</div>}
       </div>
       {overrun ? <div className="timeup-sign condensed">TIME UP</div> : null}

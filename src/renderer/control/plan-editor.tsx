@@ -1,8 +1,9 @@
-import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ClipboardPaste, Download, GripVertical, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Item, Plan } from "../../engine";
 import type { AppState } from "../../shared/ipc";
+import { csvToRunningOrderText } from "../../shared/running-order";
 import {
   Badge,
   Button,
@@ -21,6 +22,7 @@ import {
   ToggleGroupItem,
 } from "../shared/ui";
 import { DAY_NAMES, isLiveView, nextRunLabel, send } from "./common";
+import { RunningOrderImportDialog, type ImportTarget } from "./import-dialog";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,8 +43,8 @@ function isDate(value: unknown): value is string {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
 }
 
-/** Validate an imported plan file and give its items fresh ids. */
-export function normaliseImportedPlan(value: unknown): Plan | null {
+/** Validate an imported plan file and give it and its items fresh ids. */
+export function normaliseImportedPlan(value: unknown, sequence = 0): Plan | null {
   if (!isRecord(value)) return null;
   if (typeof value.name !== "string" || !value.name.trim()) return null;
   if (!isTime(value.startTime)) return null;
@@ -61,7 +63,7 @@ export function normaliseImportedPlan(value: unknown): Plan | null {
     if (item.note !== undefined && typeof item.note !== "string") return null;
     if (item.warnAtSeconds !== undefined && (!isFiniteNumber(item.warnAtSeconds) || item.warnAtSeconds < 0)) return null;
     items.push({
-      id: `item-${stamp}-${index}`,
+      id: `item-${stamp}-${sequence}-${index}`,
       title: item.title.trim(),
       minutes: item.minutes,
       ...(item.note ? { note: item.note } : {}),
@@ -69,7 +71,7 @@ export function normaliseImportedPlan(value: unknown): Plan | null {
     });
   }
   return {
-    id: `plan-${stamp}`,
+    id: `plan-${stamp}-${sequence}`,
     name: value.name.trim(),
     startTime: value.startTime,
     days: [...new Set(value.days as number[])].sort((a, b) => a - b),
@@ -80,6 +82,31 @@ export function normaliseImportedPlan(value: unknown): Plan | null {
     kind: value.kind,
     ...(typeof value.date === "string" ? { date: value.date } : {}),
   };
+}
+
+/**
+ * Read a Service Timer file: a backup of all plans ({ plans: [...] }), a list of plans,
+ * or one exported plan. Returns null if nothing in it is a valid plan.
+ */
+export function readPlansFile(value: unknown): { plans: Plan[]; skipped: number } | null {
+  const list = Array.isArray(value) ? value : value && typeof value === "object" && Array.isArray((value as { plans?: unknown }).plans) ? (value as { plans: unknown[] }).plans : [value];
+  const plans = list.map((entry, index) => normaliseImportedPlan(entry, index)).filter((plan): plan is Plan => plan !== null);
+  return plans.length ? { plans, skipped: list.length - plans.length } : null;
+}
+
+/** Give an imported plan a name that isn't already taken, such as "Sunday service (2)". */
+export function uniqueName(name: string, taken: string[]): string {
+  if (!taken.includes(name)) return name;
+  for (let count = 2; ; count += 1) if (!taken.includes(`${name} (${count})`)) return `${name} (${count})`;
+}
+
+function download(filename: string, data: unknown) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** Minutes field that only commits a valid value on blur or Enter, never a half-typed one. */
@@ -318,27 +345,97 @@ export function PlanEditorDialog({
     if (message) toast.success(message);
   };
 
-  const importJson = (file: File | undefined) => {
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteMode, setPasteMode] = useState<"new" | "replace">("new");
+  const openPaste = (text = "", mode: "new" | "replace" = "new") => {
+    flush();
+    setPasteText(text);
+    setPasteMode(mode);
+    setPasteOpen(true);
+  };
+
+  /** .json is a Service Timer file; .csv and .txt are running orders to check before saving. */
+  const importFile = (file: File | undefined) => {
     if (!file) return;
     void file.text().then((text) => {
-      try {
-        const imported = normaliseImportedPlan(JSON.parse(text));
-        if (!imported) throw new Error("Invalid plan");
-        addPlan(imported, `Imported ${imported.name}`);
-      } catch {
-        toast.error("That file isn't a Service Timer plan");
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith(".csv")) {
+        const converted = csvToRunningOrderText(text);
+        if (converted.error) toast.error(converted.error);
+        else openPaste(converted.text);
+        return;
       }
+      if (!lower.endsWith(".json")) {
+        openPaste(text);
+        return;
+      }
+      let read: ReturnType<typeof readPlansFile> = null;
+      try {
+        read = readPlansFile(JSON.parse(text));
+      } catch {
+        read = null;
+      }
+      if (!read) {
+        toast.error("That file isn't a Service Timer plan or backup.");
+        return;
+      }
+      flush();
+      const taken = plans.map((plan) => plan.name);
+      const imported = read.plans.map((plan) => {
+        const named = { ...plan, name: uniqueName(plan.name, taken) };
+        taken.push(named.name);
+        return named;
+      });
+      save([...plans, ...imported]);
+      setSelectedId(imported[0]!.id);
+      setDraft(imported[0]!);
+      const label = imported.length === 1 ? `Imported ${imported[0]!.name}` : `Imported ${imported.length} plans`;
+      toast.success(read.skipped ? `${label}. ${read.skipped} couldn't be read.` : label, {
+        duration: 10_000,
+        action: { label: "Undo", onClick: () => save(plans) },
+      });
     });
   };
 
+  const fileStem = (name: string) => name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "plan";
+
   const exportJson = () => {
     if (!draft) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${draft.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "plan"}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    flush();
+    download(`${fileStem(draft.name)}.json`, draft);
+  };
+
+  const backUpAll = () => {
+    flush();
+    const today = new Date();
+    const stamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    download(`service-timer-backup-${stamp}.json`, { app: "Service Timer", version: 1, exportedAt: today.toISOString(), activePlanId, plans });
+    toast.success(`Saved a backup of ${plans.length} plan${plans.length === 1 ? "" : "s"}`);
+  };
+
+  const applyImport = (target: ImportTarget) => {
+    if (target.mode === "new") {
+      addPlan({ ...target.plan, name: uniqueName(target.plan.name, plans.map((plan) => plan.name)) }, `Created ${target.plan.name} with ${target.plan.items.length} items`);
+      return;
+    }
+    if (!draft) return;
+    const before = draft;
+    updateDraft({ items: target.items, ...(target.startTime ? { startTime: target.startTime } : {}) });
+    toast.success(`Replaced the running order of ${before.name}`, {
+      duration: 10_000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setDraft(before);
+          setPlans((current) => {
+            const nextPlans = current.map((plan) => (plan.id === before.id ? before : plan));
+            send({ type: "savePlans", plans: nextPlans, activePlanId });
+            return nextPlans;
+          });
+        },
+      },
+    });
   };
 
   const deletePlan = () => {
@@ -386,11 +483,14 @@ export function PlanEditorDialog({
               >
                 <Plus className="size-4" /> New
               </Button>
-              <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-zinc-200 px-3 text-sm font-medium hover:bg-zinc-100">
-                Import
-                <input className="hidden" type="file" accept=".json,application/json" onChange={(event) => { importJson(event.target.files?.[0]); event.target.value = ""; }} />
+              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-medium hover:bg-zinc-100" title="A Service Timer .json file or backup, or a .csv running order">
+                <Upload className="size-4" /> Import
+                <input className="hidden" type="file" aria-label="Import a file" accept=".json,.csv,.txt,application/json,text/csv,text/plain" onChange={(event) => { importFile(event.target.files?.[0]); event.target.value = ""; }} />
               </label>
             </div>
+            <Button className="mt-2 w-full" onClick={() => openPaste()}>
+              <ClipboardPaste className="size-4" /> Paste running order
+            </Button>
             <div className="mt-3 grid min-h-0 gap-1 overflow-y-auto">
               {plans.map((plan) => (
                 <button
@@ -409,6 +509,9 @@ export function PlanEditorDialog({
                 </button>
               ))}
             </div>
+            <Button variant="ghost" size="sm" className="mt-auto justify-start text-zinc-600" onClick={backUpAll} title="Save every plan to one file, for moving laptops or keeping a copy">
+              <Download className="size-4" /> Back up all plans
+            </Button>
           </aside>
           {draft ? (
             <section className="flex min-w-0 flex-1 flex-col">
@@ -508,7 +611,8 @@ export function PlanEditorDialog({
                   items: draft.items.map((item, index) => ({ ...item, id: `item-${Date.now()}-${index}` })),
                   updatedAt: new Date().toISOString(),
                 }, "Plan duplicated")}>Duplicate</Button>
-                <Button onClick={exportJson}>Export</Button>
+                <Button onClick={exportJson} title="Save this plan to a .json file">Export</Button>
+                <Button onClick={() => openPaste("", "replace")} title="Replace this plan's items from a pasted running order">Paste items</Button>
                 <div className="flex-1" />
                 <Button variant="ghost" className="text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950" disabled={plans.length <= 1} onClick={deletePlan}>
                   <Trash2 className="size-4" /> Delete plan
@@ -517,6 +621,7 @@ export function PlanEditorDialog({
             </section>
           ) : null}
         </div>
+        <RunningOrderImportDialog open={pasteOpen} onOpenChange={setPasteOpen} initialText={pasteText} initialMode={pasteMode} plans={plans} editing={draft} onImport={applyImport} />
       </DialogContent>
     </Dialog>
   );

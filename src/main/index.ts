@@ -67,6 +67,7 @@ function isSettings(value: unknown): value is Settings {
     && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean")
     && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
     && (value.flashTimeUp === undefined || typeof value.flashTimeUp === "boolean")
+    && (value.itemNamesUppercase === undefined || typeof value.itemNamesUppercase === "boolean")
     && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
     && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
     && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
@@ -134,12 +135,18 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "moveUp":
     case "moveDown":
     case "doNext":
+    case "startNow":
+    case "removeUpcoming":
       return isInteger(value.index);
+    case "setRunItemMinutes":
+      return isInteger(value.index) && isFiniteNumber(value.minutes) && value.minutes >= 0.5 && value.minutes <= 600;
     case "message":
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
       return typeof value.on === "boolean";
     case "skipAutoStartToday":
+    case "disconnectPhone":
+      return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");
     case "newPhonePin":
     case "identifyDisplays":
       return true;
@@ -173,6 +180,7 @@ let settings: Settings = {
   warnAtSeconds: 120,
   walkthroughSeen: false,
   flashTimeUp: true,
+  itemNamesUppercase: true,
   dangerAtSeconds: 30,
   chime: "time-up",
   overtimeSign: "plus",
@@ -248,7 +256,7 @@ function toAppState(now: number): AppState {
     settings,
     update: { ...updateStatus, currentVersion: app.getVersion() },
     showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
-    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined },
+    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined, phones: webStatus.running ? webControl.phones() : [] },
   };
 }
 
@@ -268,6 +276,19 @@ function phoneSnapshot(now = Date.now()) {
     timeLeftMs: view.timeLeftMs,
     colourBand: view.colourBand,
     flashTimeUp: settings.flashTimeUp !== false,
+    uppercase: settings.itemNamesUppercase !== false,
+    live: isLive(state),
+    rows: view.scheduleRows.map((row) => ({
+      index: row.index,
+      title: row.item.title,
+      minutes: row.item.minutes,
+      scheduledStart: row.scheduledStart,
+      actualStart: row.actualStart ?? null,
+      status: row.status,
+      skipped: row.skipped,
+    })),
+    undoAvailable: Boolean(state.undoReorder && state.undoReorder.expiresAt > now),
+    hasRunChanges: view.hasRunChanges,
     current: view.current ? { title: view.current.title, minutes: view.current.minutes } : null,
     next: view.next ? { title: view.next.title, minutes: view.next.minutes } : null,
     blackout: view.blackout,
@@ -334,10 +355,20 @@ function applyTimerCommand(command: Command): void {
   broadcastState(now);
 }
 
+/** A window can close between ticks (stage unplugged, app quitting); never send to a dead one. */
+function sendTo(win: BrowserWindow | null | undefined, payload: unknown): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
+  try {
+    win.webContents.send("state", payload);
+  } catch {
+    // The frame was torn down mid-send; the next tick goes to whatever window replaces it.
+  }
+}
+
 function broadcastState(now = Date.now()): void {
   const payload = toAppState(now);
-  controlWindow?.webContents.send("state", payload);
-  stageWindow?.webContents.send("state", payload);
+  sendTo(controlWindow, payload);
+  sendTo(stageWindow, payload);
   // Phones get two updates a second, plus one straight after any change.
   if (now - lastWebBroadcast >= 450) {
     lastWebBroadcast = now;
@@ -357,9 +388,24 @@ function persistRunState(): void {
  * Pick today's plan and arm it. Only a plan that applies today (one-off date or matching
  * recurring day) can auto-start; on other days the timer stays idle (FR-18).
  */
+/** A plan picked with "Set as active plan" for today, which beats the automatic choice until tomorrow. */
+let chosenForToday: { planId: string; date: string } | null = null;
+
+function scheduledOn(plan: Plan, date: Date): boolean {
+  return plan.kind === "oneOff" ? plan.date === localDateString(date) : plan.days.includes(date.getDay());
+}
+
 function armForToday(now = Date.now()): void {
   const date = new Date(now);
   const today = localDateString(date);
+  const chosen = chosenForToday?.date === today ? plans.find((plan) => plan.id === chosenForToday!.planId) : undefined;
+  if (chosen) {
+    currentPlan = chosen;
+    // Wait for its start only if it is due later today; a picked plan never starts by surprise.
+    const due = chosen.autoStart && scheduledOn(chosen, date) && autoStartSkippedOn !== today && now < planStartMs(chosen, today);
+    state = due ? createWaitingState(chosen, today) : createIdleState(chosen, today);
+    return;
+  }
   const todays = chooseTodaysPlan(plans, date, activePlanId);
   currentPlan = todays ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
   state = todays?.autoStart && autoStartSkippedOn !== today
@@ -638,7 +684,11 @@ function registerIpc(): void {
       } else if (payload.type === "savePlans") {
         if (!payload.plans.length) return;
         plans = payload.plans;
+        const previousActiveId = activePlanId;
         activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
+        // "Set as active plan" with nothing running: show that plan now, even after a finished service.
+        const pickedPlan = activePlanId !== previousActiveId && !isLive(state);
+        if (pickedPlan) chosenForToday = { planId: activePlanId, date: localDateString(new Date(now)) };
         store?.write("plans.json", { plans, activePlanId });
         if (isLive(state)) {
           // A live run keeps its own plan; edits to that plan apply live (FR-13).
@@ -648,7 +698,7 @@ function registerIpc(): void {
             currentPlan = running;
             state = reduce(state, { type: "editPlan", plan: running }, now, previous);
           }
-        } else if (state.status === "finished") {
+        } else if (state.status === "finished" && !pickedPlan) {
           currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
         } else {
           armForToday(now);
@@ -665,6 +715,14 @@ function registerIpc(): void {
         settings = { ...settings, phonePin: newPin() };
         store?.write("settings.json", settings);
         webControl.signOutAll();
+      } else if (payload.type === "disconnectPhone") {
+        webControl.disconnect(payload.id);
+        if (payload.newPin) {
+          settings = { ...settings, phonePin: newPin() };
+          store?.write("settings.json", settings);
+          webControl.signOutAll();
+        }
+        broadcastState();
       } else if (payload.type === "skipAutoStartToday") {
         if (state.status === "waiting") {
           autoStartSkippedOn = state.runDate;
