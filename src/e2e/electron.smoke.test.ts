@@ -64,6 +64,12 @@ describe("electron milestone 3 UI", () => {
     expect(metrics.mainWidth).toBeLessThanOrEqual(metrics.width);
 
     await controlWindow.getByRole("button", { name: "Start now" }).click();
+    // Depending on the time of day the test runs, a late start opens the prompt (FR-16).
+    const lateStart = controlWindow.getByRole("dialog");
+    if (await lateStart.isVisible().catch(() => false) || await lateStart.waitFor({ timeout: 1_500 }).then(() => true, () => false)) {
+      await lateStart.getByRole("radio", { name: /Start from the top/ }).click();
+      await lateStart.getByRole("button", { name: "Start", exact: true }).click();
+    }
     await controlWindow.waitForSelector("button:has-text('Pause')");
     await stageWindow.waitForSelector('[aria-label="Stage display"]');
     expect(await stageWindow.locator("body").innerText()).toContain("Welcome and opening prayer");
@@ -120,6 +126,8 @@ describe("electron milestone 3 UI", () => {
   }, 30_000);
 
   it("keeps countdown digits large at supported stage resolutions", async () => {
+    // Arrow keys on a focused toggle group belong to the group, so move focus away first.
+    await controlWindow.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await controlWindow.keyboard.press("ArrowLeft");
     await stageWindow.waitForSelector(".stage-next");
     const sizes = [
