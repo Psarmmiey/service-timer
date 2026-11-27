@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
@@ -44,6 +45,7 @@ describe("electron milestone 3 UI", () => {
         ...process.env,
         NODE_ENV: "test",
         SERVICE_TIMER_E2E_FORCE_DUAL: "1",
+        SERVICE_TIMER_USER_DATA: await mkdtemp(join(tmpdir(), "service-timer-e2e-")),
       },
     });
 
