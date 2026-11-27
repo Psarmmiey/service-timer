@@ -106,10 +106,11 @@ describe("electron milestone 3 UI", () => {
   }, 60_000);
 
   it("shows warning and overrun states on the stage", async () => {
+    await controlWindow.getByText("Please wrap up", { exact: true }).click();
     for (let index = 0; index < 4; index += 1) await controlWindow.keyboard.press("-");
     expect(await stageWindow.locator(".stage-digits").getAttribute("data-warning")).toBe("true");
     for (let index = 0; index < 2; index += 1) await controlWindow.keyboard.press("-");
-    await stageWindow.waitForSelector(".stage-title:has-text('TIME UP')");
+    await stageWindow.waitForSelector(".stage-title:has-text('TIME UP · WELCOME AND OPENING PRAYER')");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
     expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
     await stageWindow.setViewportSize({ width: 1920, height: 1080 });
