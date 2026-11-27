@@ -66,6 +66,7 @@ function isSettings(value: unknown): value is Settings {
     && (value.warnAtSeconds === undefined || (isInteger(value.warnAtSeconds) && value.warnAtSeconds >= 0 && value.warnAtSeconds <= 1800))
     && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean")
     && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
+    && (value.flashTimeUp === undefined || typeof value.flashTimeUp === "boolean")
     && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
     && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
     && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
@@ -171,7 +172,7 @@ let settings: Settings = {
   theme: "system",
   warnAtSeconds: 120,
   walkthroughSeen: false,
-  flashAtZero: true,
+  flashTimeUp: true,
   dangerAtSeconds: 30,
   chime: "time-up",
   overtimeSign: "plus",
@@ -266,7 +267,7 @@ function phoneSnapshot(now = Date.now()) {
     paused: view.paused,
     timeLeftMs: view.timeLeftMs,
     colourBand: view.colourBand,
-    overtimeSign: settings.overtimeSign ?? "plus",
+    flashTimeUp: settings.flashTimeUp !== false,
     current: view.current ? { title: view.current.title, minutes: view.current.minutes } : null,
     next: view.next ? { title: view.next.title, minutes: view.next.minutes } : null,
     blackout: view.blackout,

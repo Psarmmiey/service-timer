@@ -83,26 +83,75 @@ input {
   background: #d00000;
 }
 
-.stage-view[data-over="true"][data-pulse="true"] {
-  animation: overrun-pulse 2.4s ease-in-out infinite;
-}
-
-/* At 0:00: three quick flashes, then steady red (or the slow pulse). */
-.stage-view[data-over="true"][data-flash-zero="true"] {
-  animation: zero-flash .5s steps(1, end) 3;
-}
-
-.stage-view[data-over="true"][data-flash-zero="true"][data-pulse="true"] {
-  animation: zero-flash .5s steps(1, end) 3, overrun-pulse 2.4s ease-in-out 1.5s infinite;
-}
-
-.stage-view[data-over="true"][data-time-up-style="digits"][data-flash-zero="true"] .stage-digits {
-  animation: zero-flash-digits .5s steps(1, end) 3;
-}
 
 .stage-view[data-over="true"][data-time-up-style="digits"] {
   background: #0a0a0a;
-  animation: none;
+}
+
+/* ---------- Time up: "TIME UP" sign, then "1:36 OVER" (design concept C) ---------- */
+.stage-view[data-over="true"] .stage-top {
+  justify-content: flex-start;
+  padding-right: 20cqw;
+}
+
+.stage-item {
+  max-width: 72cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 4.4cqh;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #fee2e2;
+}
+
+.timeup-sign {
+  flex: none;
+  font-size: min(25cqh, 24cqw);
+  line-height: .82;
+  letter-spacing: .03em;
+  color: #d00000;
+  background: #fff;
+  border: .6cqh solid #fff;
+  border-radius: 2.6cqh;
+  padding: 2.6cqh 7cqw 1.8cqh;
+}
+
+/* Flashing swaps solid and outline, so TIME UP stays readable the whole time. */
+.stage-view[data-flash-time-up="true"] .timeup-sign {
+  animation: sign-flash 1.2s steps(1, end) infinite;
+}
+
+.stage-view[data-time-up-style="digits"] .timeup-sign {
+  color: #fff;
+  background: #d00000;
+  border-color: #d00000;
+}
+
+.stage-view[data-time-up-style="digits"][data-flash-time-up="true"] .timeup-sign {
+  animation-name: sign-flash-digits;
+}
+
+.stage-over-word {
+  font-size: .36em;
+  margin-left: .14em;
+  letter-spacing: .04em;
+  color: #fecaca;
+}
+
+.stage-view[data-time-up-style="digits"] .stage-over-word {
+  color: #ff9b9b;
+}
+
+@keyframes sign-flash {
+  0% { background: #fff; color: #d00000; }
+  50% { background: transparent; color: #fff; }
+}
+
+@keyframes sign-flash-digits {
+  0% { background: #d00000; color: #fff; }
+  50% { background: transparent; color: #ff3b3b; }
 }
 
 .stage-view[data-blackout="true"] {
@@ -204,11 +253,6 @@ input {
   font-size: 100px;
 }
 
-.stage-view[data-over="true"] .stage-digits,
-.stage-view[data-over="true"] .stage-measure {
-  font-style: italic;
-}
-
 .stage-view[data-over="true"][data-time-up-style="digits"] .stage-digits {
   color: #ff3b3b;
 }
@@ -272,20 +316,6 @@ input {
   color: #fee2e2;
 }
 
-@keyframes overrun-pulse {
-  0%, 100% { background: #d00000; }
-  50% { background: #b90000; }
-}
-
-@keyframes zero-flash {
-  0% { background: #0a0a0a; }
-  50% { background: #d00000; }
-}
-
-@keyframes zero-flash-digits {
-  0% { opacity: 0; }
-  50% { opacity: 1; }
-}
 
 @keyframes message-flash {
   0%, 100% { opacity: 1; }
@@ -294,7 +324,7 @@ input {
 
 @media (prefers-reduced-motion: reduce) {
   .stage-view[data-over="true"],
-  .stage-view[data-over="true"] .stage-digits,
+  .timeup-sign,
   .stage-message[data-flash="true"] {
     animation: none;
   }

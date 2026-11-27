@@ -127,9 +127,12 @@ describe("electron milestone 3 UI", () => {
     for (let index = 0; index < 4; index += 1) await controlWindow.keyboard.press("-");
     expect(await stageWindow.locator(".stage-digits").getAttribute("data-warning")).toBe("true");
     for (let index = 0; index < 2; index += 1) await controlWindow.keyboard.press("-");
-    await stageWindow.waitForSelector(".stage-title:has-text('TIME UP · WELCOME AND OPENING PRAYER')");
+    await stageWindow.waitForSelector(".timeup-sign:has-text('TIME UP')");
+    expect(await stageWindow.locator(".stage-item").textContent()).toBe("Welcome and opening prayer");
+    expect(await stageWindow.locator(".stage-view").getAttribute("data-flash-time-up")).toBe("true");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
-    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
+    // Over time reads "1:36 OVER", never "+1:36", which people took for time added.
+    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\d+:\d{2}\s*OVER$/);
     await stageWindow.setViewportSize({ width: 1920, height: 1080 });
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });

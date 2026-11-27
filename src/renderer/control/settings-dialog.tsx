@@ -122,11 +122,8 @@ export function SettingsDialog({
                   <ToggleGroupItem value="digits" className="h-9">Red digits only</ToggleGroupItem>
                 </ToggleGroup>
               </Row>
-              <Row title="Pulse slowly at time up" hint="Turn off for anyone sensitive to flashing.">
-                <Switch aria-label="Pulse slowly at time up" checked={settings.pulse} onCheckedChange={(pulse) => update({ pulse })} />
-              </Row>
-              <Row title="Flash at 0:00" hint="Three quick flashes when time runs out, then steady.">
-                <Switch aria-label="Flash at 0:00" checked={settings.flashAtZero !== false} onCheckedChange={(flashAtZero) => update({ flashAtZero })} />
+              <Row title="Flash TIME UP" hint="The TIME UP sign flashes while the item is over time. Turn off for anyone sensitive to flashing.">
+                <Switch aria-label="Flash TIME UP" checked={settings.flashTimeUp !== false} onCheckedChange={(flashTimeUp) => update({ flashTimeUp })} />
               </Row>
               <Row title="Turn amber when" hint="Items can override this in the plan editor.">
                 <Select value={String(settings.warnAtSeconds ?? 120)} onValueChange={(value) => update({ warnAtSeconds: Number(value) })}>
@@ -144,12 +141,6 @@ export function SettingsDialog({
                     {[15, 30, 60].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 60 ? `${seconds} s left` : "1 min left"}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </Row>
-              <Row title="Show overtime as" hint="Ontime and ProPresenter use a minus sign.">
-                <ToggleGroup type="single" value={settings.overtimeSign ?? "plus"} onValueChange={(value) => value && update({ overtimeSign: value as Settings["overtimeSign"] })} className="flex gap-1" aria-label="Show overtime as">
-                  <ToggleGroupItem value="plus" className="h-9 tabular-nums">+1:30</ToggleGroupItem>
-                  <ToggleGroupItem value="minus" className="h-9 tabular-nums">−1:30</ToggleGroupItem>
-                </ToggleGroup>
               </Row>
               <Row title="Chime on this laptop" hint="Only this laptop plays it, never the stage, so the room doesn't hear it.">
                 <div className="flex items-center gap-2">

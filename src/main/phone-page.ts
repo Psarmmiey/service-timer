@@ -31,7 +31,12 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   .timer { border-radius:20px; background:#0a0a0a; border:1px solid var(--line); padding:14px 14px 16px; text-align:center; }
   .timer.over { background:var(--red); border-color:var(--red); }
   .timer .title { font-weight:700; font-size:17px; color:#e4e4e7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .timer.over .title { color:#fee2e2; letter-spacing:.04em; }
+  .timer.over .title { color:#fee2e2; letter-spacing:.06em; text-transform:uppercase; font-size:14px; }
+  .sign { display:inline-block; margin:10px 0 4px; padding:6px 18px 4px; border:3px solid #fff; border-radius:12px; background:#fff; color:var(--red); font-weight:900; font-size:clamp(40px, 13vw, 64px); line-height:1; letter-spacing:.03em; }
+  .sign.flash { animation: sign-flash 1.2s steps(1, end) infinite; }
+  @keyframes sign-flash { 0% { background:#fff; color:var(--red); } 50% { background:transparent; color:#fff; } }
+  @media (prefers-reduced-motion: reduce) { .sign.flash { animation:none; } }
+  .overword { font-size:.36em; margin-left:.12em; color:#fecaca; letter-spacing:.04em; }
   .digits { font-weight:800; font-variant-numeric: tabular-nums; font-size: clamp(64px, 24vw, 120px); line-height:1; margin:6px 0 4px; letter-spacing:-.02em; }
   .digits.warning { color:var(--amber); } .digits.danger { color:#ff3b3b; } .digits.paused { opacity:.55; }
   .timer .next { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -86,6 +91,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 
   <div class="timer" id="timer" aria-live="polite">
     <div class="title" id="title"></div>
+    <div class="sign hidden" id="sign">TIME UP</div>
     <div class="digits" id="digits">--:--</div>
     <div class="next" id="next-line"></div>
     <div class="badge hidden" id="paused-badge">PAUSED</div>
@@ -137,11 +143,10 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function clock(ms) { var d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
-  function stageTime(ms, sign) {
-    var over = ms <= 0, total = Math.floor(Math.abs(ms) / 1000);
+  function stageTime(ms) {
+    var total = Math.floor(Math.abs(ms) / 1000);
     var h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
-    var v = h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
-    return over ? (sign === "minus" ? "-" : "+") + v : v;
+    return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
   }
   function toast(text) { var t = $("toast"); t.textContent = text; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 1600); }
 
@@ -173,15 +178,26 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     var timer = $("timer"), digits = $("digits");
     timer.classList.toggle("over", s.status === "overrun" && !s.blackout);
     digits.className = "digits " + (s.colourBand === "warning" ? "warning" : s.colourBand === "danger" ? "danger" : "") + (s.paused ? " paused" : "");
+    var over = s.status === "overrun";
+    var sign = $("sign");
+    sign.classList.toggle("hidden", !over || s.blackout);
+    sign.classList.toggle("flash", s.flashTimeUp !== false);
     if (s.blackout) {
       $("title").textContent = "Stage is blacked out";
-      digits.textContent = live ? stageTime(s.timeLeftMs, s.overtimeSign) : clock(s.now);
+      digits.textContent = live ? stageTime(s.timeLeftMs) : clock(s.now);
+    } else if (over) {
+      // Same as the stage: TIME UP sign, then "1:36 OVER" (no plus sign).
+      $("title").textContent = s.current ? s.current.title : "";
+      digits.innerHTML = "";
+      digits.appendChild(document.createTextNode(stageTime(s.timeLeftMs)));
+      var word = document.createElement("span"); word.className = "overword"; word.textContent = "OVER";
+      digits.appendChild(word);
     } else if (live) {
-      $("title").textContent = s.status === "overrun" ? "TIME UP · " + (s.current ? s.current.title.toUpperCase() : "") : (s.current ? s.current.title : "");
-      digits.textContent = stageTime(s.timeLeftMs, s.overtimeSign);
+      $("title").textContent = s.current ? s.current.title : "";
+      digits.textContent = stageTime(s.timeLeftMs);
     } else if (s.status === "waiting" && s.untilStartMs > 0) {
       $("title").textContent = s.planName + " starts in";
-      digits.textContent = stageTime(s.untilStartMs, s.overtimeSign);
+      digits.textContent = stageTime(s.untilStartMs);
     } else {
       $("title").textContent = s.status === "finished" ? "Service ended" : s.planName + " · " + clock(s.plannedStart);
       digits.textContent = clock(s.now);

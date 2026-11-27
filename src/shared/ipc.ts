@@ -13,7 +13,9 @@ export type Settings = {
   /** Default amber warning, in seconds, for items without their own (FR-3). */
   warnAtSeconds?: number;
   walkthroughSeen?: boolean;
-  /** Flash the stage three times when an item hits 0:00. Default on. */
+  /** Flash the TIME UP sign while an item is over time. Default on. */
+  flashTimeUp?: boolean;
+  /** Replaced by flashTimeUp; kept so older settings files still load. */
   flashAtZero?: boolean;
   /** Red digits for this many seconds before 0:00. 0 turns it off. Default 30. */
   dangerAtSeconds?: number;

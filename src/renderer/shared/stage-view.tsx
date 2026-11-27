@@ -66,10 +66,13 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   const digits = !state || !view
     ? ""
     : countdown
-      ? formatStageTime(untilStartMs, state.settings.overtimeSign)
+      ? formatStageTime(untilStartMs)
       : clockOnly
         ? formatClock(state.now)
-        : formatStageTime(view.timeLeftMs, state.settings.overtimeSign);
+        : view.status === "overrun"
+          // Time up reads "1:36 OVER": no plus sign, which people read as time added.
+          ? formatStageTime(Math.max(1, -view.timeLeftMs))
+          : formatStageTime(view.timeLeftMs);
   // Anything that changes the space around the digits refits them before the next paint.
   const fit = useFitText(digits, `${overrun}|${view?.paused}|${view?.message?.text.length ?? -1}|${view?.blackout}`);
 
@@ -84,9 +87,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   const beforeStart = untilStartMs > 0;
   const title = finished
     ? "Service ended"
-    : overrun
-      ? `TIME UP · ${view.current?.title.toUpperCase() ?? "ITEM"}`
-      : countdown
+    : countdown
         ? `${state.plan.name} starts in`
         : clockOnly
           ? beforeStart && firstRow ? `${state.plan.name} starts at ${formatClock(firstRow.scheduledStart)}` : state.plan.name
@@ -107,17 +108,21 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       data-over={overrun}
       data-message={Boolean(view.message)}
       data-time-up-style={state.settings.timeUpStyle}
-      data-pulse={state.settings.pulse}
-      data-flash-zero={state.settings.flashAtZero !== false}
+      data-flash-time-up={state.settings.flashTimeUp !== false}
       aria-label={label}
     >
       {clockOnly ? null : <span className="stage-clock">{formatClock(state.now)}</span>}
       <div className="stage-top">
-        <div className="stage-title" data-over={overrun} title={title}>{title}</div>
+        {overrun
+          ? <div className="stage-item" title={view.current?.title}>{view.current?.title}</div>
+          : <div className="stage-title" title={title}>{title}</div>}
       </div>
+      {overrun ? <div className="timeup-sign condensed">TIME UP</div> : null}
       {view.paused ? <div className="stage-paused">PAUSED</div> : null}
       <div className="stage-digits-box" ref={fit.boxRef}>
-        <span className="stage-measure condensed" ref={fit.measureRef} aria-hidden="true">{fit.shape}</span>
+        <span className="stage-measure condensed" ref={fit.measureRef} aria-hidden="true">
+          {fit.shape}{overrun ? <span className="stage-over-word">OVER</span> : null}
+        </span>
         <div
           className="stage-digits condensed"
           data-warning={view.colourBand === "warning"}
@@ -127,7 +132,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
           data-long={digits.length > 5}
           style={{ transform: `scaleX(${SQUEEZE})`, ...(fit.size ? { fontSize: `${fit.size}px` } : {}) }}
         >
-          {digits}
+          {digits}{overrun ? <span className="stage-over-word">OVER</span> : null}
         </div>
       </div>
       {view.message ? (
