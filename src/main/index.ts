@@ -12,7 +12,9 @@ import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "
 // Loaded on first use, not at startup.
 const autoUpdater = () => electronUpdater.autoUpdater;
 
-const STAGE_BANNER = "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
+const STAGE_BANNER = process.platform === "darwin"
+  ? "No second screen found. Check the cable, and that the display is set to extend rather than mirror."
+  : "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
 const TICK_MS = 250;
 
 const defaultPlan: Plan = {
@@ -53,7 +55,10 @@ function isSettings(value: unknown): value is Settings {
     && typeof value.openAtLogin === "boolean"
     && typeof value.trayOnClose === "boolean"
     && (value.automaticUpdates === undefined || typeof value.automaticUpdates === "boolean")
-    && (value.keepAwake === undefined || typeof value.keepAwake === "boolean");
+    && (value.keepAwake === undefined || typeof value.keepAwake === "boolean")
+    && (value.theme === undefined || value.theme === "system" || value.theme === "light" || value.theme === "dark")
+    && (value.warnAtSeconds === undefined || (isInteger(value.warnAtSeconds) && value.warnAtSeconds >= 0 && value.warnAtSeconds <= 1800))
+    && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean");
 }
 
 function isItem(value: unknown): value is Item {
@@ -121,6 +126,7 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
       return typeof value.on === "boolean";
+    case "skipAutoStartToday":
     case "identifyDisplays":
       return true;
     case "checkForUpdates":
@@ -149,7 +155,12 @@ let settings: Settings = {
   trayOnClose: false,
   keepAwake: true,
   automaticUpdates: true,
+  theme: "system",
+  warnAtSeconds: 120,
+  walkthroughSeen: false,
 };
+/** Local date on which the operator turned auto-start off ("Turn off auto-start today"). */
+let autoStartSkippedOn: string | null = null;
 let updateStatus: UpdateStatus = {
   state: "idle",
   portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
@@ -188,26 +199,34 @@ function getDisplaySnapshot(): DisplayInfo[] {
 }
 
 function getDisplayStatus(): DisplayStatus {
+  const displays = getDisplaySnapshot().map((display, index) => ({
+    id: display.id,
+    isPrimary: display.isPrimary,
+    label: `Screen ${index + 1} · ${display.bounds.width}×${display.bounds.height}${display.isPrimary ? " (this laptop)" : ""}`,
+  }));
   if (!placement || placement.mode === "single-monitor") {
-    return { mode: "single-monitor", banner: STAGE_BANNER };
+    return { mode: "single-monitor", banner: STAGE_BANNER, aspectRatio: 16 / 9, displays };
   }
-
+  const bounds = placement.bounds;
   return {
     mode: "stage-window",
     stageDisplayId: placement.activeDisplayId,
+    aspectRatio: bounds && bounds.height ? bounds.width / bounds.height : 16 / 9,
+    displays,
   };
 }
 
 function toAppState(now: number): AppState {
   return {
     now,
-    view: derive(state, currentPlan, now),
+    view: derive(state, currentPlan, now, { defaultWarnSeconds: settings.warnAtSeconds }),
     plan: currentPlan,
     display: getDisplayStatus(),
     plans,
     activePlanId,
     settings,
-    update: updateStatus,
+    update: { ...updateStatus, currentVersion: app.getVersion() },
+    showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
   };
 }
 
@@ -234,7 +253,7 @@ function armForToday(now = Date.now()): void {
   const today = localDateString(date);
   const todays = chooseTodaysPlan(plans, date, activePlanId);
   currentPlan = todays ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
-  state = todays?.autoStart
+  state = todays?.autoStart && autoStartSkippedOn !== today
     ? reduce(createWaitingState(todays, today), { type: "tick" }, now, todays)
     : createIdleState(currentPlan, today);
 }
@@ -528,6 +547,11 @@ function registerIpc(): void {
         app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
         store?.write("settings.json", settings);
         updatePlacement();
+      } else if (payload.type === "skipAutoStartToday") {
+        if (state.status === "waiting") {
+          autoStartSkippedOn = state.runDate;
+          state = { ...state, status: "idle" };
+        }
       } else if (payload.type === "checkForUpdates") {
         checkForUpdates();
       } else if (payload.type === "restartToUpdate") {

@@ -341,7 +341,7 @@ function editPlan(state: RunState, newPlan: Plan, now: number, oldPlan?: Plan): 
   };
 }
 
-export function derive(state: RunState, plan: Plan, now: number): DerivedView {
+export function derive(state: RunState, plan: Plan, now: number, options: { defaultWarnSeconds?: number } = {}): DerivedView {
   const items = itemsFor(state, plan);
   const effectivePlan = { ...plan, items };
   const live = isLive(state);
@@ -354,6 +354,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     item,
     scheduledStart: starts[rowIndex]!,
     actualStart: state.actualStarts?.[item.id],
+    skipped: state.skipped.includes(item.id) && !state.actualStarts?.[item.id],
     status: state.status === "finished" || rowIndex < currentIndex
       ? "done" as const
       : rowIndex === currentIndex && live ? "current" as const : "upcoming" as const,
@@ -382,7 +383,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     ? now + Math.max(0, timeLeftMs) + remainingMs
     : projectedFinish(effectivePlan, state.runDate, state.shiftMs);
 
-  const warnAt = (current?.warnAtSeconds ?? 120) * 1000;
+  const warnAt = (current?.warnAtSeconds ?? options.defaultWarnSeconds ?? 120) * 1000;
   const colourBand =
     status === "overrun" ? "over" : live && timeLeftMs > 0 && timeLeftMs <= warnAt ? "warning" : "normal";
 
@@ -397,6 +398,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     behindAheadMs: finish - plannedFinish,
     projectedFinish: finish,
     plannedFinish,
+    hasRunChanges: Boolean(state.runItems) && isLive(state),
     message: state.message,
     blackout: state.blackout,
     banner: state.banner,

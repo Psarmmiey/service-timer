@@ -58,6 +58,8 @@ export type ScheduleRow = {
   scheduledStart: number;
   actualStart?: number;
   status: "done" | "current" | "upcoming";
+  /** Passed over by a catch-up or chosen-item start, so it never ran. */
+  skipped: boolean;
 };
 
 export type DerivedView = {
@@ -73,6 +75,8 @@ export type DerivedView = {
   projectedFinish: number;
   /** Finish time of the saved plan as planned, with no live changes. */
   plannedFinish: number;
+  /** This run's order or items differ from the saved plan (FR-14a "Save to plan"). */
+  hasRunChanges: boolean;
   message?: { text: string; flash: boolean };
   blackout: boolean;
   banner?: string;
