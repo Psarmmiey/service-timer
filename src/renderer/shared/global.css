@@ -150,13 +150,6 @@ input {
   font-weight: 600;
 }
 
-.stage-view[data-over="true"] .stage-message {
-  position: static;
-  margin-top: 1.1cqh;
-  padding: 1.4cqh 2.5cqw;
-  border-radius: 1.7cqh;
-  font-size: 5cqh;
-}
 
 .stage-digits[data-warning="true"] {
   color: #fbbf24;
@@ -179,17 +172,47 @@ input {
   text-shadow: 0 2px 8px rgb(0 0 0 / 70%);
 }
 
+/*
+ * Stage message (FR-5). It sits in the layout below the digits and never on top of
+ * them: while a message shows, the digits leave their oversized overlay position and
+ * shrink to make room (still at least 60% of the height, AC-13). Text scales with the
+ * screen and is capped at two lines; long messages use slightly smaller text.
+ */
 .stage-message {
-  position: absolute;
-  bottom: 4cqh;
+  z-index: 3;
   max-width: 90cqw;
-  border-radius: .7rem;
-  padding: 1cqh 2.6cqw;
+  margin-top: 1cqh;
+  padding: 1.2cqh 2.6cqw;
+  border-radius: 1.4cqh;
   background: white;
   color: #18181b;
-  font-size: clamp(12px, 3.6cqh, 36px);
-  font-weight: 650;
+  font-size: 5.5cqh;
+  line-height: 1.15;
+  font-weight: 700;
   text-align: center;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.stage-view[data-message="true"]:not([data-over="true"]) .stage-digits {
+  position: static;
+  transform: scaleX(.78);
+  font-size: min(61cqh, 60cqw);
+}
+
+.stage-view[data-message="true"]:not([data-over="true"]) .stage-digits[data-long="true"] {
+  font-size: min(50cqh, 46cqw);
+}
+
+.stage-view[data-over="true"][data-message="true"] .stage-digits {
+  font-size: min(54cqh, 38cqw);
+}
+
+.stage-message[data-long="true"] {
+  font-size: 4.5cqh;
 }
 
 .stage-view[data-over="true"] .stage-message {
