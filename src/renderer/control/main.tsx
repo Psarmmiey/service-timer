@@ -18,6 +18,7 @@ import { StrictMode, useEffect, useRef, useState, type PointerEvent } from "reac
 import { createRoot } from "react-dom/client";
 import { toast } from "sonner";
 import type { AppState, TimerCommand } from "../../shared/ipc";
+import type { Item, Plan } from "../../engine";
 import "../shared/global.css";
 import { formatBehindAhead, formatClock, formatMinutesLate } from "../shared/format";
 import { StageView } from "../shared/stage-view";
@@ -43,6 +44,73 @@ import {
 } from "../shared/ui";
 
 const MINUTE_MS = 60_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isTime(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month! - 1
+    && date.getUTCDate() === day;
+}
+
+function normaliseImportedPlan(value: unknown): Plan | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== "string" || !value.id.trim()) return null;
+  if (typeof value.name !== "string" || !value.name.trim()) return null;
+  if (!isTime(value.startTime)) return null;
+  if (!Array.isArray(value.days) || !value.days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)) return null;
+  if (typeof value.autoStart !== "boolean") return null;
+  if (value.autoAdvanceSeconds !== undefined && (!isFiniteNumber(value.autoAdvanceSeconds) || value.autoAdvanceSeconds < 0)) return null;
+  if (!Array.isArray(value.items)) return null;
+  if (typeof value.updatedAt !== "string" || !value.updatedAt.trim()) return null;
+  if (value.kind !== "recurring" && value.kind !== "oneOff") return null;
+  if (value.kind === "oneOff" && !isDate(value.date)) return null;
+  if (value.kind === "recurring" && value.date !== undefined && !isDate(value.date)) return null;
+  const days = value.days.filter((day): day is number => typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6);
+
+  const items: Item[] = [];
+  for (const item of value.items) {
+    if (!isRecord(item)) return null;
+    if (typeof item.id !== "string" || !item.id.trim()) return null;
+    if (typeof item.title !== "string" || !item.title.trim()) return null;
+    if (!isFiniteNumber(item.minutes) || item.minutes <= 0) return null;
+    if (item.note !== undefined && typeof item.note !== "string") return null;
+    if (item.warnAtSeconds !== undefined && (!isFiniteNumber(item.warnAtSeconds) || item.warnAtSeconds < 0)) return null;
+    items.push({
+      id: item.id.trim(),
+      title: item.title.trim(),
+      minutes: item.minutes,
+      ...(item.note !== undefined ? { note: item.note } : {}),
+      ...(item.warnAtSeconds !== undefined ? { warnAtSeconds: item.warnAtSeconds } : {}),
+    });
+  }
+
+  return {
+    id: value.id.trim(),
+    name: value.name.trim(),
+    startTime: value.startTime,
+    days: [...new Set(days)].sort((a, b) => a - b),
+    autoStart: value.autoStart,
+    ...(value.autoAdvanceSeconds !== undefined ? { autoAdvanceSeconds: value.autoAdvanceSeconds } : {}),
+    items,
+    updatedAt: value.updatedAt.trim(),
+    kind: value.kind,
+    ...(typeof value.date === "string" ? { date: value.date } : {}),
+  };
+}
 
 function send(command: TimerCommand) {
   window.api.send(command);
@@ -302,12 +370,318 @@ function AddItemDialog({
   );
 }
 
+function PlanEditorDialog({
+  state,
+  open,
+  onOpenChange,
+}: {
+  state: AppState;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [plans, setPlans] = useState<Plan[]>(state.plans);
+  const [activeId, setActiveId] = useState(state.activePlanId);
+  const [draft, setDraft] = useState<Plan | null>(null);
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDraftSave = useRef<{ plans: Plan[]; activePlanId: string } | null>(null);
+
+  useEffect(() => {
+    setPlans(state.plans);
+    setActiveId(state.activePlanId);
+  }, [state.plans, state.activePlanId]);
+
+  useEffect(() => {
+    if (!draft) setDraft(plans.find((plan) => plan.id === activeId) ?? plans[0] ?? null);
+  }, [draft, plans, activeId]);
+
+  useEffect(() => () => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+  }, []);
+
+  const save = (next: Plan[], nextActiveId = activeId) => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = null;
+    pendingDraftSave.current = null;
+    setPlans(next);
+    send({ type: "savePlans", plans: next, activePlanId: nextActiveId });
+  };
+
+  const flushDraftSave = () => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = null;
+    if (pendingDraftSave.current) {
+      send({ type: "savePlans", ...pendingDraftSave.current });
+      pendingDraftSave.current = null;
+    }
+  };
+
+  const updateDraft = (patch: Partial<Plan>) => {
+    if (!draft) return;
+    const next = { ...draft, ...patch, updatedAt: new Date().toISOString() };
+    setDraft(next);
+    const nextPlans = plans.map((plan) => plan.id === next.id ? next : plan);
+    setPlans(nextPlans);
+    pendingDraftSave.current = { plans: nextPlans, activePlanId: activeId };
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(flushDraftSave, 400);
+  };
+
+  const updateItem = (index: number, patch: Partial<Item>) => {
+    if (!draft) return;
+    const items = draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item);
+    updateDraft({ items });
+  };
+
+  const addItem = () => {
+    if (!draft) return;
+    updateDraft({
+      items: [...draft.items, {
+        id: `item-${Date.now()}`,
+        title: "New item",
+        minutes: 5,
+        warnAtSeconds: 120,
+      }],
+    });
+  };
+
+  const deleteItem = (index: number) => {
+    if (!draft) return;
+    const removed = draft.items[index];
+    if (!removed) return;
+    const items = draft.items.filter((_, itemIndex) => itemIndex !== index);
+    updateDraft({ items });
+    toast.success("Item deleted", {
+      duration: 10_000,
+      action: { label: "Undo", onClick: () => updateDraft({ items: [...items.slice(0, index), removed, ...items.slice(index)] }) },
+    });
+  };
+
+  const importJson = (file: File | undefined) => {
+    if (!file) return;
+    void file.text().then((text) => {
+      try {
+        const imported = normaliseImportedPlan(JSON.parse(text));
+        if (!imported) throw new Error("Invalid plan");
+        const next = [...plans, { ...imported, id: `${imported.id}-${Date.now()}` }];
+        save(next, next[next.length - 1]!.id);
+        setActiveId(next[next.length - 1]!.id);
+        setDraft(next[next.length - 1]!);
+        toast.success("Plan imported");
+      } catch {
+        toast.error("Could not import this plan");
+      }
+    });
+  };
+
+  const exportJson = () => {
+    if (!draft) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${draft.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "plan"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) flushDraftSave();
+      onOpenChange(nextOpen);
+    }}>
+      <DialogContent className="w-[min(1180px,calc(100vw-32px))] max-h-[calc(100vh-32px)] overflow-hidden p-0">
+        <div className="flex h-[660px] max-h-[calc(100vh-32px)]">
+          <aside className="w-[300px] shrink-0 border-r border-zinc-200 p-3">
+            <DialogTitle>Service plans</DialogTitle>
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="default"
+                className="flex-1"
+                onClick={() => {
+                  const plan: Plan = {
+                    id: `plan-${Date.now()}`,
+                    name: "New plan",
+                    startTime: "09:45",
+                    days: [0],
+                    autoStart: true,
+                    items: [],
+                    updatedAt: new Date().toISOString(),
+                    kind: "recurring",
+                  };
+                  const next = [...plans, plan];
+                  save(next, plan.id);
+                  setActiveId(plan.id);
+                  setDraft(plan);
+                }}
+              >
+                <Plus className="size-4" /> New plan
+              </Button>
+              <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-zinc-200 px-3 text-sm font-medium hover:bg-zinc-100">
+                Import
+                <input className="hidden" type="file" accept=".json,application/json" onChange={(event) => importJson(event.target.files?.[0])} />
+              </label>
+            </div>
+            <div className="mt-3 grid gap-1">
+              {plans.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  className={`rounded-lg px-3 py-2 text-left ${plan.id === activeId ? "bg-zinc-100" : "hover:bg-zinc-50"}`}
+                  onClick={() => { setActiveId(plan.id); setDraft(plan); }}
+                >
+                  <span className="block text-sm font-semibold">{plan.name}</span>
+                  <span className="text-xs text-zinc-500">{plan.kind === "recurring" ? "Recurring" : "One-off"} · {plan.startTime} · {plan.items.length} items</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+          {draft ? (
+            <section className="min-w-0 flex-1 overflow-y-auto p-5">
+              <div className="flex items-end gap-2">
+                <label className="flex-1 text-sm font-medium">
+                  Plan name
+                  <Input className="mt-1 h-10 text-base font-semibold" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} />
+                </label>
+                <Button onClick={() => {
+                  const duplicate = { ...draft, id: `plan-${Date.now()}`, name: `${draft.name} copy`, items: draft.items.map((item) => ({ ...item, id: `${item.id}-${Date.now()}` })) };
+                  const next = [...plans, duplicate];
+                  save(next, duplicate.id);
+                  setActiveId(duplicate.id);
+                  setDraft(duplicate);
+                }}>Duplicate</Button>
+                <Button onClick={exportJson}>Export</Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    if (plans.length <= 1) return;
+                    const removed = draft;
+                    const remaining = plans.filter((plan) => plan.id !== draft.id);
+                    const nextActiveId = remaining[0]!.id;
+                    save(remaining, nextActiveId);
+                    setActiveId(nextActiveId);
+                    setDraft(remaining[0]!);
+                    toast.success("Plan deleted", {
+                      duration: 10_000,
+                      action: {
+                        label: "Undo",
+                        onClick: () => {
+                          const restored = [...remaining, removed];
+                          save(restored, removed.id);
+                          setActiveId(removed.id);
+                          setDraft(removed);
+                        },
+                      },
+                    });
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-end gap-5">
+                <ToggleGroup type="single" value={draft.kind} onValueChange={(value) => value && updateDraft({ kind: value as Plan["kind"] })}>
+                  <ToggleGroupItem value="recurring">Recurring</ToggleGroupItem>
+                  <ToggleGroupItem value="oneOff">One-off date</ToggleGroupItem>
+                </ToggleGroup>
+                <label className="grid gap-1 text-sm font-medium">Start time
+                  <Input type="time" className="w-[120px]" value={draft.startTime} onChange={(event) => updateDraft({ startTime: event.target.value })} />
+                </label>
+                {draft.kind === "recurring" ? (
+                  <div>
+                    <span className="mb-1 block text-sm font-medium">Days</span>
+                    <div className="flex gap-1">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
+                        <Button
+                          key={day}
+                          size="sm"
+                          variant={draft.days.includes(index) ? "default" : "outline"}
+                          onClick={() => updateDraft({ days: draft.days.includes(index) ? draft.days.filter((dayNumber) => dayNumber !== index) : [...draft.days, index] })}
+                        >
+                          {day}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid gap-1 text-sm font-medium">Date
+                    <Input type="date" value={draft.date ?? ""} onChange={(event) => updateDraft({ date: event.target.value })} />
+                  </label>
+                )}
+                <label className="flex items-center gap-2 text-sm"><Switch checked={draft.autoStart} onCheckedChange={(checked) => updateDraft({ autoStart: checked })} /> Start automatically</label>
+              </div>
+              <div className="mt-5 grid gap-2">
+                {draft.items.map((item, index) => (
+                  <div key={item.id} className="grid grid-cols-[1fr_100px_44px] gap-2 rounded-lg border border-zinc-200 p-2">
+                    <Input aria-label={`Item ${index + 1} title`} value={item.title} onChange={(event) => updateItem(index, { title: event.target.value })} />
+                    <Input aria-label={`Item ${index + 1} minutes`} type="number" min="0.5" step="0.5" value={item.minutes} onChange={(event) => updateItem(index, { minutes: Math.max(0.5, Number(event.target.value) || 0.5) })} />
+                    <Button aria-label={`Delete ${item.title}`} variant="ghost" onClick={() => deleteItem(index)}>×</Button>
+                  </div>
+                ))}
+                <Button variant="outline" onClick={addItem}><Plus className="size-4" /> Add item</Button>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettingsDialog({
+  state,
+  open,
+  onOpenChange,
+}: {
+  state: AppState;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const update = (patch: Partial<AppState["settings"]>) => {
+    send({ type: "saveSettings", settings: { ...state.settings, ...patch } });
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(760px,calc(100vw-32px))]">
+        <DialogTitle>Settings</DialogTitle>
+        <div className="mt-5 grid grid-cols-2 gap-4">
+          <section className="grid content-start gap-4 rounded-xl border border-zinc-200 p-4">
+            <h2 className="font-semibold">Stage display</h2>
+            <label className="grid gap-1 text-sm font-medium">Show timer on
+              <Select value={state.settings.stageDisplayId !== undefined ? String(state.settings.stageDisplayId) : "automatic"} onValueChange={(value) => update({ stageDisplayId: value === "automatic" ? undefined : Number(value) })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="automatic">Automatic · external display</SelectItem>
+                  <SelectItem value="-1">Primary display</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
+            <label className="grid gap-1 text-sm font-medium">Time up style
+              <ToggleGroup type="single" value={state.settings.timeUpStyle} onValueChange={(value) => value && update({ timeUpStyle: value as AppState["settings"]["timeUpStyle"] })}>
+                <ToggleGroupItem value="whole-screen">Whole screen red</ToggleGroupItem>
+                <ToggleGroupItem value="digits">Red digits only</ToggleGroupItem>
+              </ToggleGroup>
+            </label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.pulse} onCheckedChange={(pulse) => update({ pulse })} /> Pulse slowly at time up</label>
+          </section>
+          <section className="grid content-start gap-4 rounded-xl border border-zinc-200 p-4">
+            <h2 className="font-semibold">Startup and power</h2>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.openAtLogin} onCheckedChange={(openAtLogin) => update({ openAtLogin })} /> Open when Windows starts</label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.keepAwake !== false} onCheckedChange={(keepAwake) => update({ keepAwake })} /> Keep the screen awake</label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.trayOnClose} onCheckedChange={(trayOnClose) => update({ trayOnClose })} /> Minimise to tray instead of closing</label>
+          </section>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ControlApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [confirm, setConfirm] = useState<"restart" | "stop" | null>(null);
   const [lateStartOpen, setLateStartOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
   const messageRef = useRef<HTMLInputElement>(null);
@@ -323,7 +697,9 @@ function ControlApp() {
   const start = () => {
     if (!state) return;
     const plannedStart = state.view.scheduleRows[0]?.scheduledStart ?? state.now;
-    if (state.now - plannedStart > 60_000) {
+    if (state.view.status === "idle" && state.now - plannedStart > 60_000) {
+      send({ type: "startChoice", mode: "fromTop" });
+    } else if (state.now - plannedStart > 60_000) {
       setLateStartOpen(true);
     } else {
       send({ type: "start" });
@@ -357,7 +733,7 @@ function ControlApp() {
       if (event.ctrlKey || event.metaKey) {
         if (event.key.toLowerCase() === "e") {
           event.preventDefault();
-          toast.info("Plan editing will be available in the plan editor.");
+          setPlansOpen(true);
         }
         return;
       }
@@ -367,8 +743,13 @@ function ControlApp() {
           event.preventDefault();
           if (latest.view.status === "idle" || latest.view.status === "waiting") {
             const plannedStart = latest.view.scheduleRows[0]?.scheduledStart ?? latest.now;
-            if (latest.now - plannedStart > 60_000) setLateStartOpen(true);
-            else send({ type: "start" });
+            if (latest.view.status === "idle" && latest.now - plannedStart > 60_000) {
+              send({ type: "startChoice", mode: "fromTop" });
+            } else if (latest.now - plannedStart > 60_000) {
+              setLateStartOpen(true);
+            } else {
+              send({ type: "start" });
+            }
           } else if (latest.view.status === "paused") {
             send({ type: "resume" });
           } else if (["running", "paused", "overrun"].includes(latest.view.status)) {
@@ -440,8 +821,8 @@ function ControlApp() {
           <div className="flex-1" />
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
           <div className="h-6 w-px bg-zinc-200" />
-          <Tooltip label="Plans"><Button variant="ghost" size="sm">Plans</Button></Tooltip>
-          <Tooltip label="Settings"><Button aria-label="Settings" variant="ghost" size="icon"><Settings className="size-[18px]" /></Button></Tooltip>
+          <Tooltip label="Plans"><Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)}>Plans</Button></Tooltip>
+          <Tooltip label="Settings"><Button aria-label="Settings" variant="ghost" size="icon" onClick={() => setSettingsOpen(true)}><Settings className="size-[18px]" /></Button></Tooltip>
         </header>
 
         {state.view.banner ? (
@@ -551,7 +932,7 @@ function ControlApp() {
                 <h2 className="text-sm font-semibold">Schedule</h2>
                 <p className="mt-0.5 text-[11px] text-zinc-500">{state.view.scheduleRows.length} items · finishes {formatClock(state.view.projectedFinish)}</p>
               </div>
-              <Button size="sm" onClick={() => toast.info("Plan editing will be available in the plan editor.")}>Edit plan</Button>
+              <Button size="sm" onClick={() => setPlansOpen(true)}>Edit plan</Button>
             </div>
             <div className="grid grid-cols-[44px_44px_1fr_auto] gap-2 px-4 pb-1 text-[10px] font-semibold tracking-wider text-zinc-500">
               <span>PLAN</span><span>ACTUAL</span><span>ITEM</span><span>STATUS</span>
@@ -614,6 +995,8 @@ function ControlApp() {
       <LateStartDialog state={state} open={lateStartOpen} onOpenChange={setLateStartOpen} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
+      <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} />
+      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <Toaster />
     </TooltipProvider>
   );

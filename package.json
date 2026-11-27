@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src electron.vite.config.ts --max-warnings 0",
-    "test:unit": "vitest run --coverage src/engine src/main/display-selection.test.ts src/renderer/shared/format.test.ts",
+    "test:unit": "vitest run --coverage src/engine src/main/*.test.ts src/renderer/shared/format.test.ts",
     "test:smoke": "npm run build && xvfb-run -a vitest run src/e2e/electron.smoke.test.ts",
     "test": "npm run test:unit && npm run test:smoke"
   },
