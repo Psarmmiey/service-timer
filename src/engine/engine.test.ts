@@ -197,6 +197,28 @@ describe("engine edge cases", () => {
     expect(derive(state, referencePlan, at("10:15:05")).next?.id).toBe("sermon");
   });
 
+  it("moveDown uses the run-items length after inserting an item", () => {
+    const now = at("10:15");
+    let state = createIdleState(referencePlan, "2026-11-29");
+    state = reduce(state, { type: "startChoice", mode: "fromItem", index: 3 }, now, referencePlan);
+    state = reduce(
+      state,
+      { type: "insertAfterCurrent", item: { id: "testimony", title: "Testimony", minutes: 3 } },
+      now,
+      referencePlan,
+    );
+    state = reduce(state, { type: "moveDown", index: 5 }, now, referencePlan);
+    expect(state.runItems?.map((item) => item.id)).toEqual([
+      "welcome",
+      "worship",
+      "announcements",
+      "offering",
+      "testimony",
+      "closing",
+      "sermon",
+    ]);
+  });
+
   it("message and blackout commands do not alter timer", () => {
     let state = createIdleState(referencePlan, "2026-11-29");
     state = reduce(state, { type: "message", text: "Please wrap up", flash: true }, at("09:45"));

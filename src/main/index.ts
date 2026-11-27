@@ -9,12 +9,19 @@ const STAGE_BANNER = "No second screen found. Check the cable and that Windows i
 const TICK_MS = 250;
 
 const defaultPlan: Plan = {
-  id: "placeholder",
-  name: "Service",
+  id: "sunday-service",
+  name: "Sunday service",
   startTime: "09:45",
-  days: [0, 1, 2, 3, 4, 5, 6],
+  days: [0],
   autoStart: true,
-  items: [{ id: "placeholder-item", title: "Placeholder item", minutes: 10, warnAtSeconds: 120 }],
+  items: [
+    { id: "welcome", title: "Welcome and opening prayer", minutes: 5, warnAtSeconds: 120 },
+    { id: "worship", title: "Praise and worship", minutes: 20, warnAtSeconds: 120 },
+    { id: "announcements", title: "Announcements", minutes: 5, warnAtSeconds: 120 },
+    { id: "offering", title: "Offering", minutes: 10, warnAtSeconds: 120 },
+    { id: "sermon", title: "Sermon", minutes: 40, warnAtSeconds: 120 },
+    { id: "closing", title: "Closing prayer", minutes: 5, warnAtSeconds: 120 },
+  ],
   updatedAt: "2026-11-26T00:00:00.000Z",
   kind: "recurring",
 };
@@ -143,6 +150,7 @@ function toAppState(now: number): AppState {
   return {
     now,
     view: derive(state, defaultPlan, now),
+    plan: defaultPlan,
     display: getDisplayStatus(),
   };
 }
@@ -206,8 +214,10 @@ function schedulePlacementRefresh(): void {
 
 function createControlWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: 1366,
+    height: 720,
+    minWidth: 1200,
+    minHeight: 680,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
