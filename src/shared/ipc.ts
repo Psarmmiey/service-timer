@@ -13,6 +13,46 @@ export type Settings = {
   /** Default amber warning, in seconds, for items without their own (FR-3). */
   warnAtSeconds?: number;
   walkthroughSeen?: boolean;
+  /** Show item names in capitals on the stage. Default on. */
+  itemNamesUppercase?: boolean;
+  /** Flash the TIME UP sign while an item is over time. Default on. */
+  flashTimeUp?: boolean;
+  /** Replaced by flashTimeUp; kept so older settings files still load. */
+  flashAtZero?: boolean;
+  /** Red digits for this many seconds before 0:00. 0 turns it off. Default 30. */
+  dangerAtSeconds?: number;
+  /** Chime on the control laptop only, never the stage. Default "time-up". */
+  chime?: "off" | "time-up" | "warning-and-time-up";
+  /** How overtime is written on the stage. Default "plus" (+1:30). */
+  overtimeSign?: "plus" | "minus";
+  /** Serve the phone control page on the local network (FR-22). Default off. */
+  phoneControl?: boolean;
+  /** 4-digit PIN for phone control. */
+  phonePin?: string;
+};
+
+/** What the laptop sees about each signed-in phone. Never includes the session token. */
+export type PhoneInfo = {
+  id: string;
+  name: string;
+  device: string;
+  address: string;
+  connected: boolean;
+  signedInAt: number;
+  lastSeenAt: number;
+  lastAction?: { label: string; at: number };
+};
+
+export type WebControlStatus = {
+  enabled: boolean;
+  running: boolean;
+  urls: string[];
+  qrSvg?: string;
+  pin?: string;
+  clients: number;
+  /** Signed-in phones, connected ones first. */
+  phones?: PhoneInfo[];
+  error?: string;
 };
 
 export type UpdateStatus = {
@@ -30,6 +70,9 @@ export type TimerCommand =
   | { type: "identifyDisplays" }
   | { type: "checkForUpdates" }
   | { type: "skipAutoStartToday" }
+  | { type: "newPhonePin" }
+  /** Sign one phone out; with newPin, also change the PIN so it can't sign straight back in. */
+  | { type: "disconnectPhone"; id: string; newPin?: boolean }
   | { type: "restartToUpdate" };
 
 export type DisplayOption = {
@@ -58,9 +101,30 @@ export type AppState = {
   update: UpdateStatus;
   /** Open the walkthrough automatically (first run only). */
   showWalkthrough: boolean;
+  web: WebControlStatus;
 };
+
+/** Menu bar items the control window carries out, because they open its dialogs or need its prompts. */
+export type MenuAction =
+  | "plans"
+  | "pastePlan"
+  | "importPlans"
+  | "backupPlans"
+  | "settings"
+  | "phone"
+  | "walkthrough"
+  | "shortcuts"
+  | "toggle"
+  | "message"
+  | "restart"
+  | "stop"
+  /** Main process opened a file chosen from File > Import; the text comes with it. */
+  | "importFile";
+
+export type MenuFile = { name: string; text: string };
 
 export type Api = {
   send: (command: TimerCommand) => void;
   onState: (callback: (state: AppState) => void) => () => void;
+  onMenu: (callback: (action: MenuAction, file?: MenuFile) => void) => () => void;
 };

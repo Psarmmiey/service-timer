@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
@@ -54,7 +55,7 @@ describe("stage messages", () => {
     await mkdir(shots, { recursive: true });
     app = await electron.launch({
       args: ["."],
-      env: { ...process.env, NODE_ENV: "test", SERVICE_TIMER_E2E_FORCE_DUAL: "1" },
+      env: { ...process.env, NODE_ENV: "test", SERVICE_TIMER_E2E_FORCE_DUAL: "1", SERVICE_TIMER_USER_DATA: await mkdtemp(join(tmpdir(), "service-timer-e2e-")) },
     });
     control = await findWindow('header:has-text("Service Timer")');
     stage = await findWindow('[aria-label="Stage display"]');
@@ -152,7 +153,7 @@ describe("stage messages", () => {
   it("is hidden during blackout and comes back afterwards", async () => {
     await control.getByRole("radio", { name: "Please wrap up" }).click();
     await expectStageMessage("Please wrap up");
-    const blackout = control.getByRole("button", { name: /^(Blackout|Show timer)$/ });
+    const blackout = control.getByRole("button", { name: /^(Blackout|Stage blacked out\. Show the timer)$/ });
     await blackout.click();
     await stage.waitForSelector('[aria-label="Stage is blacked out"]');
     expect(await stageMessage().count()).toBe(0);

@@ -1,6 +1,6 @@
 appId: uk.rccgstirling.servicetimer
 productName: Service Timer
-copyright: Copyright (c) RCCG Stirling
+copyright: Copyright (c) RCCG City of God For All Nations, Stirling
 directories:
   output: dist
   buildResources: build
@@ -8,8 +8,13 @@ files:
   - out/**
   - package.json
 extraResources:
-  - from: resources/tray-icon.svg
-    to: tray-icon.svg
+  # Tray icons: .ico for Windows, black "Template" images the Mac tints for light and dark menu bars.
+  - from: resources/tray.ico
+    to: tray.ico
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
 win:
   icon: build/icon.ico
   target:
@@ -20,16 +25,25 @@ win:
       arch:
         - x64
 nsis:
+  # One click, per user: no administrator password, installs and opens in a few seconds.
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
   artifactName: ServiceTimer-Setup-${version}.exe
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  shortcutName: Service Timer
+  uninstallDisplayName: Service Timer
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  runAfterFinish: true
+  # Plans and settings survive uninstalling and reinstalling.
+  deleteAppDataOnUninstall: false
 portable:
   artifactName: ServiceTimer-${version}-portable.exe
 mac:
   icon: build/icon.icns
+  category: public.app-category.productivity
   identity: "-"
   # Ad-hoc signed until there is an Apple Developer account (MAC-3); hardened runtime needs real signing.
   hardenedRuntime: false

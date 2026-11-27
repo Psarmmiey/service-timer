@@ -13,12 +13,12 @@ export const WALKTHROUGH_STEPS: Step[] = [
   { target: "status", title: "Status at a glance", body: "Running, Paused or Time up, and whether the service is ahead of or behind the plan." },
   { target: "next", title: "Next item", body: "The main button. Press it when one part of the service ends and the next begins. Shortcut: → or N." },
   { target: "pause", title: "Pause and adjust", body: "Pause or resume with Space. Use −1 min and +1 min if someone needs a little more or less time. Hold to repeat." },
-  { target: "schedule", title: "Today's schedule", body: "Planned and actual start times. Move upcoming items with the arrows, or press Do next. The item running now is locked." },
+  { target: "schedule", title: "Today's schedule", body: "Planned and actual start times. Move upcoming items with the arrows, press Do next to queue one after the current item, or the play button to start it straight away. The item running now is locked." },
   { target: "add-item", title: "Something unplanned?", body: "Add item after current puts a testimony or an extra song straight after what's happening now. The timer keeps running." },
   { target: "message", title: "Message the speaker", body: "Send \"Please wrap up\" or your own words to the stage. Esc clears it." },
   { target: "blackout", title: "Blackout", body: "Turns the stage screen black, for example during a video. Press B or this button again to bring the timer back." },
   { target: "plans", title: "Plans", body: "Set up Sunday's running order, start time and auto-start. With auto-start on, the timer starts itself even if nobody is here." },
-  { target: "settings", title: "Settings and help", body: "Choose the stage screen, light or dark theme, and replay this walkthrough. That's it: you're ready." },
+  { target: "settings", title: "Settings and help", body: "Choose the stage screen, time up alerts, light or dark theme, and phone control, so someone can run the timer from their phone. You can replay this walkthrough here too. That's it: you're ready." },
 ];
 
 const CARD_WIDTH = 340;

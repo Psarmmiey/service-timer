@@ -21,3 +21,12 @@ describe("renderer time formatting", () => {
     expect(formatMinutesLate(61_000)).toBe("1 minute");
   });
 });
+
+describe("overtime sign", () => {
+  it("shows overtime with a plus by default and a minus when chosen", async () => {
+    const { formatStageTime } = await import("./format");
+    expect(formatStageTime(-90_000)).toBe("+1:30");
+    expect(formatStageTime(-90_000, "minus")).toBe("-1:30");
+    expect(formatStageTime(90_000, "minus")).toBe("1:30");
+  });
+});
