@@ -7,6 +7,14 @@ let app: ElectronApplication;
 let controlWindow: Page;
 let stageWindow: Page;
 
+/** The digits are refitted on the frame after a size change; wait until they fit their box. */
+async function digitsFitted(page: Page) {
+  await page.waitForFunction(() => {
+    const box = document.querySelector<HTMLElement>(".stage-digits-box");
+    return Boolean(box && box.dataset.fitted === `${box.clientWidth}x${box.clientHeight}`);
+  }, undefined, { timeout: 5_000 });
+}
+
 async function waitForWindows(appInstance: ElectronApplication, minimum: number): Promise<Page[]> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
@@ -44,7 +52,7 @@ describe("electron milestone 3 UI", () => {
     stageWindow = (await findWindowBySelector(windows, '[aria-label="Stage display"]'))!;
     expect(controlWindow).toBeTruthy();
     expect(stageWindow).toBeTruthy();
-    await controlWindow.waitForSelector("button:has-text('Start now')");
+    await controlWindow.getByRole("button", { name: /^(Start now|Start)$/ }).waitFor();
   }, 120_000);
 
   afterAll(async () => {
@@ -63,7 +71,7 @@ describe("electron milestone 3 UI", () => {
     expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.height);
     expect(metrics.mainWidth).toBeLessThanOrEqual(metrics.width);
 
-    await controlWindow.getByRole("button", { name: "Start now" }).click();
+    await controlWindow.getByRole("button", { name: /^(Start now|Start)$/ }).click();
     // Depending on the time of day the test runs, a late start opens the prompt (FR-16).
     const lateStart = controlWindow.getByRole("dialog");
     if (await lateStart.isVisible().catch(() => false) || await lateStart.waitFor({ timeout: 1_500 }).then(() => true, () => false)) {
@@ -77,7 +85,7 @@ describe("electron milestone 3 UI", () => {
     await controlWindow.getByText("Please wrap up", { exact: true }).click();
     await stageWindow.waitForSelector(".stage-message:has-text('Please wrap up')");
 
-    const blackout = controlWindow.getByRole("switch", { name: "Blackout stage" });
+    const blackout = controlWindow.getByRole("button", { name: /^(Blackout|Show timer)$/ });
     await blackout.click();
     await stageWindow.waitForSelector('[aria-label="Stage is blacked out"]');
     await blackout.click();
@@ -102,7 +110,7 @@ describe("electron milestone 3 UI", () => {
     await controlWindow.getByRole("button", { name: "Add time", exact: true }).click();
     await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
     await controlWindow.getByRole("spinbutton", { name: "Amount" }).fill("2");
-    await controlWindow.getByRole("button", { name: "Subtract", exact: true }).click();
+    await controlWindow.getByRole("button", { name: "Take away", exact: true }).click();
 
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
@@ -141,6 +149,7 @@ describe("electron milestone 3 UI", () => {
 
     for (const size of sizes) {
       await stageWindow.setViewportSize(size);
+      await digitsFitted(stageWindow);
       const bounds = await stageWindow.locator(".stage-digits").boundingBox();
       const titleBounds = await stageWindow.locator(".stage-title").boundingBox();
       const nextBounds = await stageWindow.locator(".stage-next").boundingBox();
@@ -159,4 +168,18 @@ describe("electron milestone 3 UI", () => {
       });
     }
   }, 60_000);
+
+  it("keeps ten minutes or more on screen at every size", async () => {
+    await controlWindow.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    for (let index = 0; index < 8; index += 1) await controlWindow.keyboard.press("+");
+    await stageWindow.waitForFunction(() => /^\d{2}:\d{2}$/.test(document.querySelector(".stage-digits")?.textContent ?? ""));
+    for (const size of [{ width: 1024, height: 768 }, { width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+      await stageWindow.setViewportSize(size);
+      await digitsFitted(stageWindow);
+      const bounds = (await stageWindow.locator(".stage-digits").boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(size.width);
+      expect(bounds.height).toBeGreaterThanOrEqual(size.height * 0.45);
+    }
+  }, 30_000);
 });
