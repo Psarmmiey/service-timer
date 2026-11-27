@@ -49,6 +49,9 @@ describe("electron smoke", () => {
 
     expect(allWindows.length).toBeGreaterThanOrEqual(2);
 
+    // Add wait to ensure content is rendered
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     const controlWindow = await findWindowByText(allWindows, "Control");
     const stageWindow = await findWindowByText(allWindows, "Stage");
 
