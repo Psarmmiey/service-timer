@@ -17,6 +17,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Electron fetches its binary on first launch; do it here so the smoke test doesn't time out.
+      - run: node node_modules/electron/install.js
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:ci

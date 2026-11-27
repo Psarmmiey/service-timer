@@ -45,7 +45,7 @@ describe("electron milestone 3 UI", () => {
     expect(controlWindow).toBeTruthy();
     expect(stageWindow).toBeTruthy();
     await controlWindow.waitForSelector("button:has-text('Start now')");
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     await app.close();

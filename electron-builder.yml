@@ -7,6 +7,9 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: resources/tray-icon.svg
+    to: tray-icon.svg
 win:
   icon: build/icon.ico
   target:
@@ -28,6 +31,8 @@ portable:
 mac:
   icon: build/icon.icns
   identity: "-"
+  # Ad-hoc signed until there is an Apple Developer account (MAC-3); hardened runtime needs real signing.
+  hardenedRuntime: false
   target:
     - target: dmg
       arch:
@@ -35,7 +40,6 @@ mac:
     - target: zip
       arch:
         - arm64
-  identity: null
 publish:
   provider: github
   owner: Psarmmiey
