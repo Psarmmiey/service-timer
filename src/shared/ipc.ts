@@ -1,4 +1,4 @@
-import type { Command, DerivedView } from "../engine";
+import type { Command, DerivedView, Plan } from "../engine";
 
 export type TimerCommand = Command;
 
@@ -11,6 +11,7 @@ export type DisplayStatus = {
 export type AppState = {
   now: number;
   view: DerivedView;
+  plan: Plan;
   display: DisplayStatus;
 };
 

@@ -60,6 +60,7 @@ function startItem(state: RunState, plan: Plan, index: number, now: number, timi
     itemStartedAt: now,
     itemDurationMs: left,
     pausedLeftMs: undefined,
+    actualStarts: { ...state.actualStarts, [item.id]: now },
   };
 }
 
@@ -222,7 +223,10 @@ export function reduce(state: RunState, command: Command, now: number, plan?: Pl
     let fromIndex = "fromIndex" in command ? command.fromIndex : command.index;
     let toIndex = "toIndex" in command ? command.toIndex : fromIndex;
     if (command.type === "moveUp") toIndex = Math.max(state.index + 1, fromIndex - 1);
-    if (command.type === "moveDown") toIndex = Math.min(plan.items.length - 1, fromIndex + 1);
+    if (command.type === "moveDown") {
+      const currentItems = state.runItems ?? plan.items;
+      toIndex = Math.min(currentItems.length - 1, fromIndex + 1);
+    }
     if (command.type === "doNext") {
       fromIndex = command.index;
       toIndex = state.index + 1;
@@ -262,6 +266,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     index: rowIndex,
     item,
     scheduledStart: starts[rowIndex]!,
+    actualStart: state.actualStarts?.[item.id],
     status: rowIndex < currentIndex ? "done" as const : rowIndex === currentIndex ? "current" as const : "upcoming" as const,
   }));
 

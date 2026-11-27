@@ -39,6 +39,7 @@ export type RunState = {
   runItems?: Item[];
   currentItemId?: string;
   currentItemMinutes?: number;
+  actualStarts?: Record<string, number>;
   banner?: string;
 };
 
@@ -51,6 +52,7 @@ export type ScheduleRow = {
   index: number;
   item: Item;
   scheduledStart: number;
+  actualStart?: number;
   status: "done" | "current" | "upcoming";
 };
 
