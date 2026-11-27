@@ -25,30 +25,36 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   }
 
   const overrun = view.status === "overrun";
-  const waiting = view.status === "waiting" || view.status === "idle";
   const finished = view.status === "finished";
   const firstRow = view.scheduleRows[0];
-  const waitingMs = firstRow ? Math.max(1, firstRow.scheduledStart - state.now) : 1;
-  const digits = finished
-    ? "—"
-    : formatStageTime(waiting ? waitingMs : view.timeLeftMs);
+  const untilStartMs = firstRow ? firstRow.scheduledStart - state.now : 0;
+  // Countdown to the start only when auto-start is armed and within 30 minutes (FR-18).
+  const countdown = view.status === "waiting" && untilStartMs > 0 && untilStartMs <= 30 * 60_000;
+  // Otherwise, before or after the service, the stage shows the clock (Idle and Finished states).
+  const clockOnly = !countdown && (view.status === "waiting" || view.status === "idle" || finished);
+  const beforeStart = untilStartMs > 0;
+  const digits = countdown
+    ? formatStageTime(untilStartMs)
+    : clockOnly
+      ? formatClock(state.now)
+      : formatStageTime(view.timeLeftMs);
   const title = finished
     ? "Service ended"
     : overrun
       ? `TIME UP · ${view.current?.title.toUpperCase() ?? "ITEM"}`
-      : waiting
+      : countdown
         ? `${state.plan.name} starts in`
-        : view.current?.title ?? "Service";
-  const next = waiting
+        : clockOnly
+          ? beforeStart && firstRow ? `${state.plan.name} starts at ${formatClock(firstRow.scheduledStart)}` : state.plan.name
+          : view.current?.title ?? "Service";
+  const next = countdown || (clockOnly && beforeStart)
     ? firstRow
       ? `First: ${firstRow.item.title} · ${formatClock(firstRow.scheduledStart)}`
       : ""
-    : overrun
+    : clockOnly || overrun
       ? ""
       : view.next
-      ? `Next: ${view.next.title} (${view.next.minutes} min)`
-      : finished
-        ? "Thank you"
+        ? `Next: ${view.next.title} (${view.next.minutes} min)`
         : "Final item";
 
   return (
@@ -59,8 +65,8 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       data-pulse={state.settings.pulse}
       aria-label={preview ? "Stage preview" : "Stage display"}
     >
-      <span className="stage-clock">{formatClock(state.now)}</span>
-      {view.status === "paused" ? <span className="stage-paused">PAUSED</span> : null}
+      {clockOnly ? null : <span className="stage-clock">{formatClock(state.now)}</span>}
+      {view.paused ? <span className="stage-paused">PAUSED</span> : null}
       <div className="stage-title" data-over={overrun}>{title}</div>
       <div
         className="stage-digits condensed"

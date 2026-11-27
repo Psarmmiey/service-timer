@@ -78,7 +78,8 @@ describe("reference plan acceptance criteria", () => {
     const view = derive(state, referencePlan, now);
     expect(view.current?.id).toBe("announcements");
     expect(view.timeLeftMs).toBe(3 * MINUTE_MS);
-    expect(state.banner).toContain("Start from the top");
+    expect(state.banner).toContain("Started automatically at 10:12");
+    expect(state.bannerAction).toBe("fromTop");
   });
 
   it("AC-5 editing the current item adds its time difference", () => {
@@ -273,3 +274,130 @@ describe("engine edge cases", () => {
     expect(new Date(planStartMs(referencePlan, "2026-03-29")).getHours()).toBe(9);
   });
 });
+
+describe("Sunday readiness regressions", () => {
+  it("an on-time auto-start a fraction of a second late starts cleanly with no banner", () => {
+    let state = createWaitingState(referencePlan, "2026-11-29");
+    state = reduce(state, { type: "tick" }, at("09:45") + 180, referencePlan);
+    expect(state.status).toBe("running");
+    expect(state.currentItemId).toBe("welcome");
+    expect(state.banner).toBeUndefined();
+    expect(derive(state, referencePlan, at("09:45")).timeLeftMs).toBe(5 * MINUTE_MS);
+  });
+
+  it("waiting does not auto-start when auto-start has been turned off", () => {
+    const plan = { ...referencePlan, autoStart: false };
+    const state = reduce(createWaitingState(plan, "2026-11-29"), { type: "tick" }, at("09:45"), plan);
+    expect(state.status).toBe("idle");
+  });
+
+  it("Start from the top is accepted after an automatic catch-up start", () => {
+    let state = reduce(createWaitingState(referencePlan, "2026-11-29"), { type: "tick" }, at("10:12"), referencePlan);
+    state = reduce(state, { type: "startChoice", mode: "fromTop" }, at("10:13"), referencePlan);
+    const view = derive(state, referencePlan, at("10:13"));
+    expect(view.current?.id).toBe("welcome");
+    expect(view.timeLeftMs).toBe(5 * MINUTE_MS);
+    expect(state.banner).toBeUndefined();
+  });
+
+  it("start choices are ignored while a run is live without an offer", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "start" }, at("09:45"), referencePlan);
+    const before = state;
+    state = reduce(state, { type: "startChoice", mode: "fromTop" }, at("09:50"), referencePlan);
+    expect(state).toBe(before);
+    expect(reduce(state, { type: "start" }, at("09:50"), referencePlan)).toBe(before);
+  });
+
+  it("a late Start does nothing on its own so the prompt can ask", () => {
+    const idle = createIdleState(referencePlan, "2026-11-29");
+    expect(reduce(idle, { type: "start" }, at("09:55"), referencePlan).status).toBe("idle");
+  });
+
+  it("Previous and Restart do nothing before the service starts", () => {
+    const waiting = createWaitingState(referencePlan, "2026-11-29");
+    expect(reduce(waiting, { type: "previous" }, at("09:30"), referencePlan)).toBe(waiting);
+    expect(reduce(waiting, { type: "restartItem" }, at("09:30"), referencePlan)).toBe(waiting);
+  });
+
+  it("Next does not skip an item inserted after the last planned item", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 5 }, at("11:05"), referencePlan);
+    state = reduce(state, { type: "insertAfterCurrent", item: { id: "extra", title: "Extra song", minutes: 4 } }, at("11:06"), referencePlan);
+    state = reduce(state, { type: "next" }, at("11:10"), referencePlan);
+    expect(state.status).toBe("running");
+    expect(derive(state, referencePlan, at("11:10")).current?.id).toBe("extra");
+  });
+
+  it("Restart uses the duration of the item actually running after a reorder", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 3 }, at("10:15"), referencePlan);
+    state = reduce(state, { type: "doNext", index: 5 }, at("10:16"), referencePlan);
+    state = reduce(state, { type: "next" }, at("10:25"), referencePlan);
+    state = reduce(state, { type: "restartItem" }, at("10:27"), referencePlan);
+    const view = derive(state, referencePlan, at("10:27"));
+    expect(view.current?.id).toBe("closing");
+    expect(view.timeLeftMs).toBe(5 * MINUTE_MS);
+  });
+
+  it("deleting a finished item above the current one leaves the countdown alone", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 4 }, at("10:25"), referencePlan);
+    const edited = { ...referencePlan, items: referenceItems.filter((item) => item.id !== "welcome") };
+    state = reduce(state, { type: "editPlan", plan: edited }, at("10:30"), referencePlan);
+    const view = derive(state, edited, at("10:30"));
+    expect(view.current?.id).toBe("sermon");
+    expect(view.timeLeftMs).toBe(35 * MINUTE_MS);
+    state = reduce(state, { type: "next" }, at("10:31"), edited);
+    expect(derive(state, edited, at("10:31")).current?.id).toBe("closing");
+  });
+
+  it("editing the current item twice does not double-count the change", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 4 }, at("10:25"), referencePlan);
+    const fortyFive = { ...referencePlan, items: referenceItems.map((item) => item.id === "sermon" ? { ...item, minutes: 45 } : item) };
+    state = reduce(state, { type: "editPlan", plan: fortyFive }, at("10:30"), referencePlan);
+    const renamed = { ...fortyFive, items: fortyFive.items.map((item) => item.id === "sermon" ? { ...item, title: "Sermon: Grace" } : item) };
+    state = reduce(state, { type: "editPlan", plan: renamed }, at("10:31"), fortyFive);
+    expect(derive(state, renamed, at("10:31")).timeLeftMs).toBe(39 * MINUTE_MS);
+  });
+
+  it("deleting the current item moves to the next item with its full time", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 4 }, at("10:25"), referencePlan);
+    const deleted = { ...referencePlan, items: referenceItems.filter((item) => item.id !== "sermon") };
+    state = reduce(state, { type: "editPlan", plan: deleted }, at("10:26"), referencePlan);
+    const view = derive(state, deleted, at("10:26"));
+    expect(view.current?.id).toBe("closing");
+    expect(view.timeLeftMs).toBe(5 * MINUTE_MS);
+  });
+
+  it("editing the saved plan keeps an item inserted for this run", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 3 }, at("10:15"), referencePlan);
+    state = reduce(state, { type: "insertAfterCurrent", item: { id: "testimony", title: "Testimony", minutes: 3 } }, at("10:16"), referencePlan);
+    const edited = { ...referencePlan, items: referenceItems.map((item) => item.id === "closing" ? { ...item, minutes: 10 } : item) };
+    state = reduce(state, { type: "editPlan", plan: edited }, at("10:17"), referencePlan);
+    expect(derive(state, edited, at("10:17")).next?.id).toBe("testimony");
+    expect(state.runItems?.find((item) => item.id === "closing")?.minutes).toBe(10);
+  });
+
+  it("projected finish follows +1 min, overruns and early finishes", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 4 }, at("10:25"), referencePlan);
+    expect(derive(state, referencePlan, at("10:25")).behindAheadMs).toBe(0);
+    state = reduce(state, { type: "adjust", ms: MINUTE_MS }, at("10:30"), referencePlan);
+    expect(derive(state, referencePlan, at("10:30")).behindAheadMs).toBe(MINUTE_MS);
+    expect(derive(state, referencePlan, at("11:08")).behindAheadMs).toBe(3 * MINUTE_MS);
+    state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 4 }, at("10:25"), referencePlan);
+    state = reduce(state, { type: "next" }, at("10:55"), referencePlan);
+    expect(derive(state, referencePlan, at("10:55")).behindAheadMs).toBe(-10 * MINUTE_MS);
+  });
+
+  it("pausing during time up reports paused so the operator can resume", () => {
+    let state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 0 }, at("09:45"), referencePlan);
+    state = reduce(state, { type: "pause" }, at("09:51"), referencePlan);
+    const view = derive(state, referencePlan, at("09:52"));
+    expect(view.status).toBe("overrun");
+    expect(view.paused).toBe(true);
+  });
+
+  it("the auto-start banner can be dismissed", () => {
+    let state = reduce(createWaitingState(referencePlan, "2026-11-29"), { type: "tick" }, at("10:12"), referencePlan);
+    state = reduce(state, { type: "dismissBanner" }, at("10:13"), referencePlan);
+    expect(state.banner).toBeUndefined();
+  });
+});
+
