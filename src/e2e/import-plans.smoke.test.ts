@@ -121,4 +121,29 @@ describe("importing plans", () => {
     await plansDialog().getByRole("button", { name: /Sunday service, 15 Nov \(2\)/ }).waitFor();
     expect(await plansDialog().locator("aside button:has(span.text-sm)").count()).toBe(before * 2);
   }, 30_000);
+
+  it("shows a plan on the schedule as soon as it is set active, even after a service has ended", async () => {
+    await control.keyboard.press("Escape");
+    await plansDialog().waitFor({ state: "detached" });
+    // Run the current plan and stop it, so the service has ended.
+    await control.getByRole("button", { name: /^(Start now|Start)$/ }).click();
+    const late = control.getByRole("dialog");
+    if (await late.waitFor({ timeout: 1_500 }).then(() => true, () => false)) {
+      await late.getByRole("radio", { name: /Start from the top/ }).click();
+      await late.getByRole("button", { name: "Start", exact: true }).click();
+    }
+    await control.getByRole("button", { name: "Stop", exact: true }).click();
+    await control.getByRole("dialog").getByRole("button", { name: "Stop timer" }).click();
+    const header = control.locator("header");
+    expect(await header.innerText()).not.toContain("Sunday service, 15 Nov");
+
+    await control.getByRole("button", { name: "Plans", exact: true }).click();
+    await plansDialog().getByRole("button", { name: /^Sunday service, 15 Nov(?! \(2\))/ }).click();
+    await plansDialog().getByRole("button", { name: "Set as active plan" }).click();
+    await control.keyboard.press("Escape");
+    await header.getByText("Sunday service, 15 Nov").waitFor({ timeout: 5_000 });
+    await control.locator("aside").getByText("Praise and worship").waitFor();
+    // Picking a plan never starts it by surprise.
+    expect(await header.innerText()).not.toMatch(/Running/);
+  }, 30_000);
 });

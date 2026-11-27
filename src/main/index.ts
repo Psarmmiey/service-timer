@@ -388,9 +388,24 @@ function persistRunState(): void {
  * Pick today's plan and arm it. Only a plan that applies today (one-off date or matching
  * recurring day) can auto-start; on other days the timer stays idle (FR-18).
  */
+/** A plan picked with "Set as active plan" for today, which beats the automatic choice until tomorrow. */
+let chosenForToday: { planId: string; date: string } | null = null;
+
+function scheduledOn(plan: Plan, date: Date): boolean {
+  return plan.kind === "oneOff" ? plan.date === localDateString(date) : plan.days.includes(date.getDay());
+}
+
 function armForToday(now = Date.now()): void {
   const date = new Date(now);
   const today = localDateString(date);
+  const chosen = chosenForToday?.date === today ? plans.find((plan) => plan.id === chosenForToday!.planId) : undefined;
+  if (chosen) {
+    currentPlan = chosen;
+    // Wait for its start only if it is due later today; a picked plan never starts by surprise.
+    const due = chosen.autoStart && scheduledOn(chosen, date) && autoStartSkippedOn !== today && now < planStartMs(chosen, today);
+    state = due ? createWaitingState(chosen, today) : createIdleState(chosen, today);
+    return;
+  }
   const todays = chooseTodaysPlan(plans, date, activePlanId);
   currentPlan = todays ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
   state = todays?.autoStart && autoStartSkippedOn !== today
@@ -669,7 +684,11 @@ function registerIpc(): void {
       } else if (payload.type === "savePlans") {
         if (!payload.plans.length) return;
         plans = payload.plans;
+        const previousActiveId = activePlanId;
         activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
+        // "Set as active plan" with nothing running: show that plan now, even after a finished service.
+        const pickedPlan = activePlanId !== previousActiveId && !isLive(state);
+        if (pickedPlan) chosenForToday = { planId: activePlanId, date: localDateString(new Date(now)) };
         store?.write("plans.json", { plans, activePlanId });
         if (isLive(state)) {
           // A live run keeps its own plan; edits to that plan apply live (FR-13).
@@ -679,7 +698,7 @@ function registerIpc(): void {
             currentPlan = running;
             state = reduce(state, { type: "editPlan", plan: running }, now, previous);
           }
-        } else if (state.status === "finished") {
+        } else if (state.status === "finished" && !pickedPlan) {
           currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
         } else {
           armForToday(now);
