@@ -28,4 +28,14 @@ describe("atomic JSON storage", () => {
     const store = createJsonStore(directory);
     expect(store.read("plans.json", { plans: [] })).toEqual({ plans: [] });
   });
+
+  it("overwrites an existing JSON file", () => {
+    const directory = mkdtempSync(join(tmpdir(), "service-timer-store-"));
+    directories.push(directory);
+    const store = createJsonStore(directory);
+    store.write("plans.json", { plans: ["first"] });
+    store.write("plans.json", { plans: ["second"] });
+
+    expect(store.read("plans.json", null)).toEqual({ plans: ["second"] });
+  });
 });

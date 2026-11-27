@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type JsonStore = {
@@ -21,7 +21,14 @@ export function createJsonStore(directory: string): JsonStore {
       mkdirSync(dirname(target), { recursive: true });
       const temporary = `${target}.${process.pid}.tmp`;
       writeFileSync(temporary, JSON.stringify(value, null, 2), "utf8");
-      renameSync(temporary, target);
+      try {
+        renameSync(temporary, target);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "EEXIST" && code !== "EPERM") throw error;
+        unlinkSync(target);
+        renameSync(temporary, target);
+      }
     },
   };
 }
