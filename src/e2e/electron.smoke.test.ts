@@ -93,6 +93,9 @@ describe("electron milestone 3 UI", () => {
     await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
     await controlWindow.getByRole("spinbutton", { name: "Amount" }).fill("2");
     await controlWindow.getByRole("button", { name: "Add time", exact: true }).click();
+    await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
+    await controlWindow.getByRole("spinbutton", { name: "Amount" }).fill("2");
+    await controlWindow.getByRole("button", { name: "Subtract", exact: true }).click();
 
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
