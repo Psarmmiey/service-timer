@@ -6,7 +6,8 @@ export function formatTime(ms: number): string {
   return `${sign}${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function formatStageTime(ms: number): string {
+/** Countdown for the stage. Overtime shows as +1:30 (default) or -1:30. */
+export function formatStageTime(ms: number, overtimeSign: "plus" | "minus" = "plus"): string {
   const overrun = ms <= 0;
   const totalSeconds = Math.floor(Math.abs(ms) / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -15,7 +16,7 @@ export function formatStageTime(ms: number): string {
   const value = hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
-  return overrun ? `+${value}` : value;
+  return overrun ? `${overtimeSign === "minus" ? "-" : "+"}${value}` : value;
 }
 
 export function formatClock(timestamp: number): string {

@@ -1,18 +1,28 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell, Tray } from "electron";
 // electron-updater is CommonJS; a named ESM import crashes the main process on launch.
 import electronUpdater from "electron-updater";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import QRCode from "qrcode";
 import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
-import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus } from "../shared/ipc";
+import type { AppState, DisplayStatus, MenuAction, Settings, TimerCommand, UpdateStatus, WebControlStatus } from "../shared/ipc";
+import { menuTemplate } from "./menu";
+import type { Command } from "../engine";
+import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
 
 // Loaded on first use, not at startup.
 const autoUpdater = () => electronUpdater.autoUpdater;
 
-const STAGE_BANNER = "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
+// Tests (and anyone running a second copy) can point the app at its own data folder.
+if (process.env.SERVICE_TIMER_USER_DATA) app.setPath("userData", process.env.SERVICE_TIMER_USER_DATA);
+
+const STAGE_BANNER = process.platform === "darwin"
+  ? "No second screen found. Check the cable, and that the display is set to extend rather than mirror."
+  : "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
 const TICK_MS = 250;
 
 const defaultPlan: Plan = {
@@ -53,7 +63,18 @@ function isSettings(value: unknown): value is Settings {
     && typeof value.openAtLogin === "boolean"
     && typeof value.trayOnClose === "boolean"
     && (value.automaticUpdates === undefined || typeof value.automaticUpdates === "boolean")
-    && (value.keepAwake === undefined || typeof value.keepAwake === "boolean");
+    && (value.keepAwake === undefined || typeof value.keepAwake === "boolean")
+    && (value.theme === undefined || value.theme === "system" || value.theme === "light" || value.theme === "dark")
+    && (value.warnAtSeconds === undefined || (isInteger(value.warnAtSeconds) && value.warnAtSeconds >= 0 && value.warnAtSeconds <= 1800))
+    && (value.walkthroughSeen === undefined || typeof value.walkthroughSeen === "boolean")
+    && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
+    && (value.flashTimeUp === undefined || typeof value.flashTimeUp === "boolean")
+    && (value.itemNamesUppercase === undefined || typeof value.itemNamesUppercase === "boolean")
+    && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
+    && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
+    && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
+    && (value.phoneControl === undefined || typeof value.phoneControl === "boolean")
+    && (value.phonePin === undefined || (typeof value.phonePin === "string" && /^\d{4}$/.test(value.phonePin)));
 }
 
 function isItem(value: unknown): value is Item {
@@ -116,11 +137,19 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "moveUp":
     case "moveDown":
     case "doNext":
+    case "startNow":
+    case "removeUpcoming":
       return isInteger(value.index);
+    case "setRunItemMinutes":
+      return isInteger(value.index) && isFiniteNumber(value.minutes) && value.minutes >= 0.5 && value.minutes <= 600;
     case "message":
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
       return typeof value.on === "boolean";
+    case "skipAutoStartToday":
+    case "disconnectPhone":
+      return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");
+    case "newPhonePin":
     case "identifyDisplays":
       return true;
     case "checkForUpdates":
@@ -149,7 +178,20 @@ let settings: Settings = {
   trayOnClose: false,
   keepAwake: true,
   automaticUpdates: true,
+  theme: "system",
+  warnAtSeconds: 120,
+  walkthroughSeen: false,
+  flashTimeUp: true,
+  itemNamesUppercase: true,
+  dangerAtSeconds: 30,
+  chime: "time-up",
+  overtimeSign: "plus",
+  phoneControl: false,
 };
+let webStatus: WebControlStatus = { enabled: false, running: false, urls: [], clients: 0 };
+let lastWebBroadcast = 0;
+/** Local date on which the operator turned auto-start off ("Turn off auto-start today"). */
+let autoStartSkippedOn: string | null = null;
 let updateStatus: UpdateStatus = {
   state: "idle",
   portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
@@ -188,33 +230,215 @@ function getDisplaySnapshot(): DisplayInfo[] {
 }
 
 function getDisplayStatus(): DisplayStatus {
+  const displays = getDisplaySnapshot().map((display, index) => ({
+    id: display.id,
+    isPrimary: display.isPrimary,
+    label: `Screen ${index + 1} · ${display.bounds.width}×${display.bounds.height}${display.isPrimary ? " (this laptop)" : ""}`,
+  }));
   if (!placement || placement.mode === "single-monitor") {
-    return { mode: "single-monitor", banner: STAGE_BANNER };
+    return { mode: "single-monitor", banner: STAGE_BANNER, aspectRatio: 16 / 9, displays };
   }
-
+  const bounds = placement.bounds;
   return {
     mode: "stage-window",
     stageDisplayId: placement.activeDisplayId,
+    aspectRatio: bounds && bounds.height ? bounds.width / bounds.height : 16 / 9,
+    displays,
   };
 }
 
 function toAppState(now: number): AppState {
   return {
     now,
-    view: derive(state, currentPlan, now),
+    view: deriveView(now),
     plan: currentPlan,
     display: getDisplayStatus(),
     plans,
     activePlanId,
     settings,
-    update: updateStatus,
+    update: { ...updateStatus, currentVersion: app.getVersion() },
+    showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
+    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined, phones: webStatus.running ? webControl.phones() : [] },
   };
 }
 
+function deriveView(now: number) {
+  return derive(state, currentPlan, now, { defaultWarnSeconds: settings.warnAtSeconds, dangerSeconds: settings.dangerAtSeconds ?? 30 });
+}
+
+/** What the phone page needs: the live timer, never plans or settings. */
+function phoneSnapshot(now = Date.now()) {
+  const view = deriveView(now);
+  const plannedStart = view.scheduleRows[0]?.scheduledStart ?? now;
+  return {
+    now,
+    planName: currentPlan.name,
+    status: view.status,
+    paused: view.paused,
+    timeLeftMs: view.timeLeftMs,
+    colourBand: view.colourBand,
+    flashTimeUp: settings.flashTimeUp !== false,
+    uppercase: settings.itemNamesUppercase !== false,
+    live: isLive(state),
+    rows: view.scheduleRows.map((row) => ({
+      index: row.index,
+      title: row.item.title,
+      minutes: row.item.minutes,
+      scheduledStart: row.scheduledStart,
+      actualStart: row.actualStart ?? null,
+      status: row.status,
+      skipped: row.skipped,
+    })),
+    undoAvailable: Boolean(state.undoReorder && state.undoReorder.expiresAt > now),
+    hasRunChanges: view.hasRunChanges,
+    current: view.current ? { title: view.current.title, minutes: view.current.minutes } : null,
+    next: view.next ? { title: view.next.title, minutes: view.next.minutes } : null,
+    blackout: view.blackout,
+    message: view.message ?? null,
+    banner: view.banner ?? null,
+    plannedStart,
+    plannedFinish: view.plannedFinish,
+    projectedFinish: view.projectedFinish,
+    untilStartMs: plannedStart - now,
+    late: now - plannedStart > 60_000 && now < view.plannedFinish,
+  };
+}
+
+const webControl = createWebControl({
+  getSnapshot: () => phoneSnapshot(),
+  getPin: () => settings.phonePin ?? "",
+  onCommand: (command) => {
+    if (!isTimerCommand(command)) return false;
+    applyTimerCommand(command as Command);
+    return true;
+  },
+  onClientsChanged: (count) => {
+    webStatus = { ...webStatus, clients: count };
+    broadcastState();
+  },
+});
+
+/** Start or stop phone control to match the setting (FR-22). */
+async function syncWebControl(): Promise<void> {
+  if (!settings.phoneControl || (process.env.NODE_ENV === "test" && process.env.SERVICE_TIMER_E2E_WEB !== "1")) {
+    await webControl.stop();
+    webStatus = { enabled: Boolean(settings.phoneControl), running: false, urls: [], clients: 0 };
+    broadcastState();
+    return;
+  }
+  if (!settings.phonePin) {
+    settings = { ...settings, phonePin: newPin() };
+    store?.write("settings.json", settings);
+  }
+  try {
+    const port = await webControl.start(DEFAULT_PHONE_PORT);
+    const urls = lanAddresses().map((address) => `http://${address}:${port}`);
+    const qrSvg = urls[0] ? await QRCode.toString(urls[0], { type: "svg", margin: 1, errorCorrectionLevel: "M" }) : undefined;
+    webStatus = {
+      enabled: true,
+      running: true,
+      urls,
+      qrSvg,
+      clients: webControl.clientCount(),
+      error: urls.length ? undefined : "This laptop isn't on a Wi-Fi or wired network, so phones can't reach it.",
+    };
+  } catch (error) {
+    webStatus = { enabled: true, running: false, urls: [], clients: 0, error: `Phone control couldn't start: ${(error as Error).message}` };
+  }
+  broadcastState();
+}
+
+/** Apply a timer command from the control window or a phone. */
+function applyTimerCommand(command: Command): void {
+  const now = Date.now();
+  state = reduce(state, command, now, currentPlan);
+  persistRunState();
+  updatePowerBlocker();
+  broadcastState(now);
+}
+
+/** A window can close between ticks (stage unplugged, app quitting); never send to a dead one. */
+function sendTo(win: BrowserWindow | null | undefined, payload: unknown): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
+  try {
+    win.webContents.send("state", payload);
+  } catch {
+    // The frame was torn down mid-send; the next tick goes to whatever window replaces it.
+  }
+}
+
+let menuKey = "";
+
+/** About box: the Mac has its own panel; Windows gets a simple dialog with the logo. */
+function showAbout(): void {
+  const detail = `Version ${app.getVersion()}\nA stage countdown timer for church services.\nRCCG City of God For All Nations, Stirling.`;
+  if (process.platform === "darwin") {
+    app.setAboutPanelOptions({ applicationName: "Service Timer", applicationVersion: app.getVersion(), copyright: "RCCG City of God For All Nations, Stirling" });
+    app.showAboutPanel();
+    return;
+  }
+  const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "build"), app.isPackaged ? "tray.ico" : "icon.png"));
+  void dialog.showMessageBox({ type: "info", title: "About Service Timer", message: "Service Timer", detail, icon, buttons: ["OK"] });
+}
+
+function sendMenuAction(action: MenuAction): void {
+  focusControlWindow();
+  if (!controlWindow || controlWindow.isDestroyed()) return;
+  if (action === "importPlans") {
+    // A file picker needs a click inside the page, so the menu opens it here and passes the text on.
+    const window = controlWindow;
+    void dialog.showOpenDialog(window, {
+      title: "Import a plan, backup or running order",
+      properties: ["openFile"],
+      filters: [{ name: "Plans and running orders", extensions: ["json", "csv", "txt"] }],
+    }).then(async ({ canceled, filePaths }) => {
+      const path = filePaths[0];
+      if (canceled || !path || window.isDestroyed()) return;
+      const text = await readFile(path, "utf8");
+      if (text.length > 2_000_000) return;
+      window.webContents.send("menu", "importFile", { name: basename(path), text });
+    }).catch((error: unknown) => console.error("Import failed", error));
+    return;
+  }
+  controlWindow.webContents.send("menu", action);
+}
+
+/** Rebuild the menu bar only when something it shows has changed (labels, ticks, screens). */
+function refreshMenu(now = Date.now()): void {
+  const view = deriveView(now);
+  const displays = getDisplayStatus().displays;
+  const live = isLive(state);
+  const key = JSON.stringify([state.status, live, view.blackout, Boolean(view.message), settings.theme, settings.stageDisplayId, displays.map((d) => [d.id, d.label]), updateStatus.portable, settings]);
+  if (key === menuKey) return;
+  menuKey = key;
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate({
+    platform: process.platform,
+    appName: "Service Timer",
+    isDev: !app.isPackaged,
+    status: state.status,
+    live,
+    blackout: Boolean(view.blackout),
+    hasMessage: Boolean(view.message),
+    settings,
+    displays,
+    canUpdate: app.isPackaged && !updateStatus.portable,
+    command: (command) => handleCommand(command),
+    ui: sendMenuAction,
+    about: showAbout,
+    openLink: (url) => void shell.openExternal(url),
+  })));
+}
+
 function broadcastState(now = Date.now()): void {
+  refreshMenu(now);
   const payload = toAppState(now);
-  controlWindow?.webContents.send("state", payload);
-  stageWindow?.webContents.send("state", payload);
+  sendTo(controlWindow, payload);
+  sendTo(stageWindow, payload);
+  // Phones get two updates a second, plus one straight after any change.
+  if (now - lastWebBroadcast >= 450) {
+    lastWebBroadcast = now;
+    webControl.broadcast();
+  }
 }
 
 function persistRunState(): void {
@@ -229,12 +453,27 @@ function persistRunState(): void {
  * Pick today's plan and arm it. Only a plan that applies today (one-off date or matching
  * recurring day) can auto-start; on other days the timer stays idle (FR-18).
  */
+/** A plan picked with "Set as active plan" for today, which beats the automatic choice until tomorrow. */
+let chosenForToday: { planId: string; date: string } | null = null;
+
+function scheduledOn(plan: Plan, date: Date): boolean {
+  return plan.kind === "oneOff" ? plan.date === localDateString(date) : plan.days.includes(date.getDay());
+}
+
 function armForToday(now = Date.now()): void {
   const date = new Date(now);
   const today = localDateString(date);
+  const chosen = chosenForToday?.date === today ? plans.find((plan) => plan.id === chosenForToday!.planId) : undefined;
+  if (chosen) {
+    currentPlan = chosen;
+    // Wait for its start only if it is due later today; a picked plan never starts by surprise.
+    const due = chosen.autoStart && scheduledOn(chosen, date) && autoStartSkippedOn !== today && now < planStartMs(chosen, today);
+    state = due ? createWaitingState(chosen, today) : createIdleState(chosen, today);
+    return;
+  }
   const todays = chooseTodaysPlan(plans, date, activePlanId);
   currentPlan = todays ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
-  state = todays?.autoStart
+  state = todays?.autoStart && autoStartSkippedOn !== today
     ? reduce(createWaitingState(todays, today), { type: "tick" }, now, todays)
     : createIdleState(currentPlan, today);
 }
@@ -311,12 +550,15 @@ function createControlWindow(): BrowserWindow {
     height: 720,
     minWidth: 1200,
     minHeight: 680,
-    autoHideMenuBar: true,
+    // Windows: keep the menu bar visible so File, Timer and Help are easy to find.
+    autoHideMenuBar: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // The control window plays the time up chime without a click first.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 
@@ -385,6 +627,8 @@ function createStageWindow(): BrowserWindow {
   } else {
     void window.loadFile(join(__dirname, "../renderer/stage.html"));
   }
+  // The stage never shows a menu bar, even on Windows.
+  window.removeMenu();
 
   window.webContents.on("did-finish-load", () => {
     applyStageWindowMode(window);
@@ -498,50 +742,78 @@ function restartToUpdate(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.on("command", (_, payload: unknown) => {
-    if (!isTimerCommand(payload)) return;
+  ipcMain.on("command", (_, payload: unknown) => handleCommand(payload));
+}
 
-    try {
-      const now = Date.now();
-      if (payload.type === "identifyDisplays") {
-        identifyDisplays();
-      } else if (payload.type === "savePlans") {
-        if (!payload.plans.length) return;
-        plans = payload.plans;
-        activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
-        store?.write("plans.json", { plans, activePlanId });
-        if (isLive(state)) {
-          // A live run keeps its own plan; edits to that plan apply live (FR-13).
-          const running = plans.find((plan) => plan.id === state.planId);
-          if (running) {
-            const previous = currentPlan;
-            currentPlan = running;
-            state = reduce(state, { type: "editPlan", plan: running }, now, previous);
-          }
-        } else if (state.status === "finished") {
-          currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
-        } else {
-          armForToday(now);
+/** Apply a command from the control window or the menu bar. */
+function handleCommand(payload: unknown): void {
+  if (!isTimerCommand(payload)) return;
+
+  try {
+    const now = Date.now();
+    if (payload.type === "identifyDisplays") {
+      identifyDisplays();
+    } else if (payload.type === "savePlans") {
+      if (!payload.plans.length) return;
+      plans = payload.plans;
+      const previousActiveId = activePlanId;
+      activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
+      // "Set as active plan" with nothing running: show that plan now, even after a finished service.
+      const pickedPlan = activePlanId !== previousActiveId && !isLive(state);
+      if (pickedPlan) chosenForToday = { planId: activePlanId, date: localDateString(new Date(now)) };
+      store?.write("plans.json", { plans, activePlanId });
+      if (isLive(state)) {
+        // A live run keeps its own plan; edits to that plan apply live (FR-13).
+        const running = plans.find((plan) => plan.id === state.planId);
+        if (running) {
+          const previous = currentPlan;
+          currentPlan = running;
+          state = reduce(state, { type: "editPlan", plan: running }, now, previous);
         }
-      } else if (payload.type === "saveSettings") {
-        settings = payload.settings;
-        app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
-        store?.write("settings.json", settings);
-        updatePlacement();
-      } else if (payload.type === "checkForUpdates") {
-        checkForUpdates();
-      } else if (payload.type === "restartToUpdate") {
-        restartToUpdate();
+      } else if (state.status === "finished" && !pickedPlan) {
+        currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
       } else {
-        state = reduce(state, payload, now, currentPlan);
+        armForToday(now);
       }
-      persistRunState();
-      updatePowerBlocker();
-      broadcastState(now);
-    } catch (error) {
-      console.error("Ignoring invalid timer command", error);
+    } else if (payload.type === "saveSettings") {
+      const phoneWasOn = Boolean(settings.phoneControl);
+      // The PIN is managed here, not by the control window.
+      settings = { ...payload.settings, phonePin: settings.phonePin };
+      app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+      store?.write("settings.json", settings);
+      updatePlacement();
+      if (phoneWasOn !== Boolean(settings.phoneControl)) void syncWebControl();
+    } else if (payload.type === "newPhonePin") {
+      settings = { ...settings, phonePin: newPin() };
+      store?.write("settings.json", settings);
+      webControl.signOutAll();
+    } else if (payload.type === "disconnectPhone") {
+      webControl.disconnect(payload.id);
+      if (payload.newPin) {
+        settings = { ...settings, phonePin: newPin() };
+        store?.write("settings.json", settings);
+        webControl.signOutAll();
+      }
+      broadcastState();
+    } else if (payload.type === "skipAutoStartToday") {
+      if (state.status === "waiting") {
+        autoStartSkippedOn = state.runDate;
+        state = { ...state, status: "idle" };
+      }
+    } else if (payload.type === "checkForUpdates") {
+      checkForUpdates();
+    } else if (payload.type === "restartToUpdate") {
+      restartToUpdate();
+    } else {
+      state = reduce(state, payload, now, currentPlan);
     }
-  });
+    lastWebBroadcast = 0;
+    persistRunState();
+    updatePowerBlocker();
+    broadcastState(now);
+  } catch (error) {
+    console.error("Ignoring invalid timer command", error);
+  }
 }
 
 function registerDisplayListeners(): void {
@@ -558,11 +830,11 @@ function createWindows(): void {
 
 function createTray(): void {
   if (tray) return;
-  const trayIcon = nativeImage.createFromPath(join(
-    app.isPackaged ? process.resourcesPath : app.getAppPath(),
-    app.isPackaged ? "tray-icon.svg" : "resources/tray-icon.svg",
-  ));
-  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createFromNamedImage("NSApplicationIcon") : trayIcon);
+  // Windows wants an .ico; a Mac wants a black "Template" image it can tint for light and dark menu bars.
+  const iconFile = process.platform === "win32" ? "tray.ico" : process.platform === "darwin" ? "trayTemplate.png" : "trayTemplate@2x.png";
+  const trayIcon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), iconFile));
+  if (process.platform === "darwin") trayIcon.setTemplateImage(true);
+  tray = new Tray(trayIcon);
   const menu = Menu.buildFromTemplate([
     { label: "Show Service Timer", click: () => focusControlWindow() },
     { label: "Quit", click: () => app.quit() },
@@ -623,6 +895,7 @@ if (!singleInstanceLock) {
     registerDisplayListeners();
     createWindows();
     startTickLoop();
+    void syncWebControl();
     updatePowerBlocker();
     setupUpdater();
     persistenceTimer = setInterval(persistRunState, 5_000);
@@ -637,6 +910,7 @@ if (!singleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
+  void webControl.stop();
   if (tickTimer) clearInterval(tickTimer);
   if (hotPlugTimer) clearTimeout(hotPlugTimer);
   if (updateCheckTimer) clearInterval(updateCheckTimer);

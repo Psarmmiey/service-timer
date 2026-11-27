@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
@@ -6,6 +7,14 @@ import { _electron as electron, type ElectronApplication, type Page } from "play
 let app: ElectronApplication;
 let controlWindow: Page;
 let stageWindow: Page;
+
+/** The digits are refitted on the frame after a size change; wait until they fit their box. */
+async function digitsFitted(page: Page) {
+  await page.waitForFunction(() => {
+    const box = document.querySelector<HTMLElement>(".stage-digits-box");
+    return Boolean(box && box.dataset.fitted === `${box.clientWidth}x${box.clientHeight}`);
+  }, undefined, { timeout: 5_000 });
+}
 
 async function waitForWindows(appInstance: ElectronApplication, minimum: number): Promise<Page[]> {
   const deadline = Date.now() + 20_000;
@@ -36,6 +45,7 @@ describe("electron milestone 3 UI", () => {
         ...process.env,
         NODE_ENV: "test",
         SERVICE_TIMER_E2E_FORCE_DUAL: "1",
+        SERVICE_TIMER_USER_DATA: await mkdtemp(join(tmpdir(), "service-timer-e2e-")),
       },
     });
 
@@ -44,7 +54,7 @@ describe("electron milestone 3 UI", () => {
     stageWindow = (await findWindowBySelector(windows, '[aria-label="Stage display"]'))!;
     expect(controlWindow).toBeTruthy();
     expect(stageWindow).toBeTruthy();
-    await controlWindow.waitForSelector("button:has-text('Start now')");
+    await controlWindow.getByRole("button", { name: /^(Start now|Start)$/ }).waitFor();
   }, 120_000);
 
   afterAll(async () => {
@@ -63,7 +73,7 @@ describe("electron milestone 3 UI", () => {
     expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.height);
     expect(metrics.mainWidth).toBeLessThanOrEqual(metrics.width);
 
-    await controlWindow.getByRole("button", { name: "Start now" }).click();
+    await controlWindow.getByRole("button", { name: /^(Start now|Start)$/ }).click();
     // Depending on the time of day the test runs, a late start opens the prompt (FR-16).
     const lateStart = controlWindow.getByRole("dialog");
     if (await lateStart.isVisible().catch(() => false) || await lateStart.waitFor({ timeout: 1_500 }).then(() => true, () => false)) {
@@ -72,12 +82,13 @@ describe("electron milestone 3 UI", () => {
     }
     await controlWindow.waitForSelector("button:has-text('Pause')");
     await stageWindow.waitForSelector('[aria-label="Stage display"]');
-    expect(await stageWindow.locator("body").innerText()).toContain("Welcome and opening prayer");
+    // Item names show in capitals on the stage by default.
+    expect(await stageWindow.locator("body").innerText()).toContain("WELCOME AND OPENING PRAYER");
 
     await controlWindow.getByText("Please wrap up", { exact: true }).click();
     await stageWindow.waitForSelector(".stage-message:has-text('Please wrap up')");
 
-    const blackout = controlWindow.getByRole("switch", { name: "Blackout stage" });
+    const blackout = controlWindow.getByRole("button", { name: /^(Blackout|Stage blacked out\. Show the timer)$/ });
     await blackout.click();
     await stageWindow.waitForSelector('[aria-label="Stage is blacked out"]');
     await blackout.click();
@@ -102,7 +113,7 @@ describe("electron milestone 3 UI", () => {
     await controlWindow.getByRole("button", { name: "Add time", exact: true }).click();
     await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
     await controlWindow.getByRole("spinbutton", { name: "Amount" }).fill("2");
-    await controlWindow.getByRole("button", { name: "Subtract", exact: true }).click();
+    await controlWindow.getByRole("button", { name: "Take away", exact: true }).click();
 
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
@@ -117,9 +128,12 @@ describe("electron milestone 3 UI", () => {
     for (let index = 0; index < 4; index += 1) await controlWindow.keyboard.press("-");
     expect(await stageWindow.locator(".stage-digits").getAttribute("data-warning")).toBe("true");
     for (let index = 0; index < 2; index += 1) await controlWindow.keyboard.press("-");
-    await stageWindow.waitForSelector(".stage-title:has-text('TIME UP · WELCOME AND OPENING PRAYER')");
+    await stageWindow.waitForSelector(".timeup-sign:has-text('TIME UP')");
+    expect(await stageWindow.locator(".stage-item").textContent()).toBe("Welcome and opening prayer");
+    expect(await stageWindow.locator(".stage-view").getAttribute("data-flash-time-up")).toBe("true");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
-    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
+    // Over time reads "1:36 OVER", never "+1:36", which people took for time added.
+    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\d+:\d{2}\s*OVER$/);
     await stageWindow.setViewportSize({ width: 1920, height: 1080 });
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
@@ -141,6 +155,7 @@ describe("electron milestone 3 UI", () => {
 
     for (const size of sizes) {
       await stageWindow.setViewportSize(size);
+      await digitsFitted(stageWindow);
       const bounds = await stageWindow.locator(".stage-digits").boundingBox();
       const titleBounds = await stageWindow.locator(".stage-title").boundingBox();
       const nextBounds = await stageWindow.locator(".stage-next").boundingBox();
@@ -159,4 +174,18 @@ describe("electron milestone 3 UI", () => {
       });
     }
   }, 60_000);
+
+  it("keeps ten minutes or more on screen at every size", async () => {
+    await controlWindow.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    for (let index = 0; index < 8; index += 1) await controlWindow.keyboard.press("+");
+    await stageWindow.waitForFunction(() => /^\d{2}:\d{2}$/.test(document.querySelector(".stage-digits")?.textContent ?? ""));
+    for (const size of [{ width: 1024, height: 768 }, { width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+      await stageWindow.setViewportSize(size);
+      await digitsFitted(stageWindow);
+      const bounds = (await stageWindow.locator(".stage-digits").boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(size.width);
+      expect(bounds.height).toBeGreaterThanOrEqual(size.height * 0.45);
+    }
+  }, 30_000);
 });

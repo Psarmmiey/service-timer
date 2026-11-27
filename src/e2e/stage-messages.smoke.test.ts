@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
@@ -8,6 +9,14 @@ import { _electron as electron, type ElectronApplication, type Page } from "play
 let app: ElectronApplication;
 let control: Page;
 let stage: Page;
+/** The digits are refitted on the frame after a size change; wait until they fit their box. */
+async function digitsFitted(page: Page) {
+  await page.waitForFunction(() => {
+    const box = document.querySelector<HTMLElement>(".stage-digits-box");
+    return Boolean(box && box.dataset.fitted === `${box.clientWidth}x${box.clientHeight}`);
+  }, undefined, { timeout: 5_000 });
+}
+
 const shots = process.env.STAGE_MESSAGE_SHOTS ?? "/tmp/service-timer-screenshots/messages";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -46,13 +55,13 @@ describe("stage messages", () => {
     await mkdir(shots, { recursive: true });
     app = await electron.launch({
       args: ["."],
-      env: { ...process.env, NODE_ENV: "test", SERVICE_TIMER_E2E_FORCE_DUAL: "1" },
+      env: { ...process.env, NODE_ENV: "test", SERVICE_TIMER_E2E_FORCE_DUAL: "1", SERVICE_TIMER_USER_DATA: await mkdtemp(join(tmpdir(), "service-timer-e2e-")) },
     });
     control = await findWindow('header:has-text("Service Timer")');
     stage = await findWindow('[aria-label="Stage display"]');
     await control.setViewportSize({ width: 1366, height: 720 });
     await stage.setViewportSize({ width: 1920, height: 1080 });
-    await control.waitForSelector("button:has-text('Start now')");
+    await control.getByRole("button", { name: /^(Start now|Start)$/ }).waitFor();
   }, 120_000);
 
   afterAll(async () => {
@@ -68,7 +77,7 @@ describe("stage messages", () => {
   });
 
   it("presets replace each other and stay shown until cleared", async () => {
-    await control.getByRole("button", { name: "Start now" }).click();
+    await control.getByRole("button", { name: /^(Start now|Start)$/ }).click();
     const late = control.getByRole("dialog");
     if (await late.waitFor({ timeout: 1_500 }).then(() => true, () => false)) {
       await late.getByRole("radio", { name: /Start from the top/ }).click();
@@ -144,7 +153,7 @@ describe("stage messages", () => {
   it("is hidden during blackout and comes back afterwards", async () => {
     await control.getByRole("radio", { name: "Please wrap up" }).click();
     await expectStageMessage("Please wrap up");
-    const blackout = control.getByRole("switch", { name: "Blackout stage" });
+    const blackout = control.getByRole("button", { name: /^(Blackout|Stage blacked out\. Show the timer)$/ });
     await blackout.click();
     await stage.waitForSelector('[aria-label="Stage is blacked out"]');
     expect(await stageMessage().count()).toBe(0);
@@ -156,7 +165,7 @@ describe("stage messages", () => {
     const results: string[] = [];
     for (const size of [{ width: 1024, height: 768 }, { width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
       await stage.setViewportSize(size);
-      await control.waitForTimeout(300);
+      await digitsFitted(stage);
       const message = (await stageMessage().boundingBox())!;
       const digits = (await stage.locator(".stage-digits").boundingBox())!;
       const next = await stage.locator(".stage-next").boundingBox();
@@ -180,6 +189,7 @@ describe("stage messages", () => {
     await box.fill(long);
     await box.press("Enter");
     await expectStageMessage(long.slice(0, 40));
+    await digitsFitted(stage);
     const message = (await stageMessage().boundingBox())!;
     expect(message.x).toBeGreaterThanOrEqual(0);
     expect(message.x + message.width).toBeLessThanOrEqual(1920);

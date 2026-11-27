@@ -23,7 +23,9 @@ const buttonVariants = cva(
         default: "border-zinc-950 bg-zinc-950 text-zinc-50 hover:bg-zinc-800",
         outline: "bg-white",
         ghost: "border-transparent bg-transparent hover:bg-zinc-100",
-        destructive: "border-red-700 bg-red-700 text-white hover:bg-red-800",
+        destructive: "border-red-700 bg-red-700 text-[#fff] hover:bg-red-800",
+        // Something needs attention, such as a paused timer. Fixed colours so both themes match.
+        attention: "border-amber-400 bg-amber-400 text-[#18181b] hover:border-amber-300 hover:bg-amber-300",
       },
       size: {
         default: "h-9",
@@ -87,13 +89,19 @@ export const DialogClose = DialogPrimitive.Close;
 export function DialogContent({
   children,
   className,
+  side,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & { side?: "right" }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-zinc-950/60" />
+      <DialogPrimitive.Overlay className={side === "right" ? "fixed inset-0 z-50 bg-black/25" : "fixed inset-0 z-50 bg-black/60"} />
       <DialogPrimitive.Content
-        className={cn("fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white p-6 shadow-2xl focus:outline-none", className)}
+        className={cn(
+          side === "right"
+            ? "fixed inset-y-0 right-0 z-50 flex w-[min(800px,calc(100vw-560px))] min-w-[640px] flex-col border-l border-zinc-200 bg-white shadow-2xl focus:outline-none"
+            : "fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white p-6 shadow-2xl focus:outline-none",
+          className,
+        )}
         {...props}
       >
         {children}
@@ -193,6 +201,8 @@ export function Tooltip({ children, label }: { children: ReactNode; label: strin
   );
 }
 
-export function Toaster() {
-  return <Sonner position="bottom-right" richColors closeButton />;
+export function Toaster({ theme = "light" }: { theme?: "light" | "dark" }) {
+  // Over the lower, usually empty, part of the schedule: clear of the current item and
+  // of "Add item after current".
+  return <Sonner position="bottom-right" offset={{ bottom: 96, right: 28 }} richColors closeButton theme={theme} />;
 }

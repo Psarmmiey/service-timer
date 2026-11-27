@@ -17,6 +17,10 @@ export type Command =
   | { type: "moveUp"; index: number }
   | { type: "moveDown"; index: number }
   | { type: "doNext"; index: number }
+  /** Go straight to an upcoming item: the current item ends now and the items in between stay in the order. */
+  | { type: "startNow"; index: number }
+  | { type: "setRunItemMinutes"; index: number; minutes: number }
+  | { type: "removeUpcoming"; index: number }
   | { type: "undoReorder" }
   | { type: "message"; text: string; flash?: boolean }
   | { type: "clearMessage" }
@@ -48,6 +52,17 @@ export function isLive(state: RunState): boolean {
   return state.status === "running" || state.status === "paused";
 }
 
+/** True when today's order, titles or minutes differ from the saved plan (an undone change is no change). */
+function runDiffers(state: RunState, plan: Plan): boolean {
+  const run = state.runItems;
+  if (!run) return false;
+  if (run.length !== plan.items.length) return true;
+  return run.some((item, index) => {
+    const saved = plan.items[index]!;
+    return item.id !== saved.id || item.title !== saved.title || item.minutes !== saved.minutes || item.warnAtSeconds !== saved.warnAtSeconds;
+  });
+}
+
 /** The items this run follows: run-only changes if any, otherwise the saved plan. */
 function itemsFor(state: RunState, plan: Plan): Item[] {
   return state.runItems ?? plan.items;
@@ -74,6 +89,8 @@ function freshRun(state: RunState): RunState {
     skipped: [],
     runItems: undefined,
     runOnlyIds: undefined,
+    runRemovedIds: undefined,
+    runMinutes: undefined,
     undoReorder: undefined,
     actualStarts: {},
     banner: undefined,
@@ -271,9 +288,58 @@ export function reduce(state: RunState, command: Command, now: number, plan?: Pl
     return { ...state, runItems: items, undoReorder: { items: currentItems, expiresAt: now + 10_000 } };
   }
 
+  if (command.type === "startNow") {
+    if (!plan || !isLive(state)) return state;
+    const before = itemsFor(state, plan);
+    const current = locateCurrent(state, before);
+    if (command.index <= current || command.index >= before.length) return state;
+    const items = [...before];
+    const [moved] = items.splice(command.index, 1);
+    items.splice(current + 1, 0, moved!);
+    const changed = command.index === current + 1 ? state : { ...state, runItems: items };
+    // Time has moved on, so there is nothing sensible to undo; Previous goes back if it was a mistake.
+    return startItem({ ...changed, undoReorder: undefined }, plan, current + 1, now, "item");
+  }
+
+  if (command.type === "setRunItemMinutes" || command.type === "removeUpcoming") {
+    if (!plan || !isLive(state)) return state;
+    const before = itemsFor(state, plan);
+    const current = locateCurrent(state, before);
+    const target = before[command.index];
+    // Only upcoming items; the item running now uses +/- instead.
+    if (!target || command.index <= current) return state;
+    if (command.type === "setRunItemMinutes") {
+      if (!Number.isFinite(command.minutes) || command.minutes < 0.5 || command.minutes > 600) return state;
+      const minutes = Math.round(command.minutes * 2) / 2;
+      return {
+        ...state,
+        runItems: before.map((item, index) => (index === command.index ? { ...item, minutes } : item)),
+        runMinutes: { ...state.runMinutes, [target.id]: minutes },
+        undoReorder: { items: before, expiresAt: now + 10_000 },
+      };
+    }
+    return {
+      ...state,
+      runItems: before.filter((_, index) => index !== command.index),
+      runRemovedIds: [...(state.runRemovedIds ?? []), target.id],
+      undoReorder: { items: before, expiresAt: now + 10_000 },
+    };
+  }
+
   if (command.type === "undoReorder") {
     if (!state.undoReorder || now > state.undoReorder.expiresAt) return { ...state, undoReorder: undefined };
-    return { ...state, runItems: state.undoReorder.items, undoReorder: undefined };
+    const restored = state.undoReorder.items;
+    const ids = new Set(restored.map((item) => item.id));
+    const runMinutes = Object.fromEntries(
+      Object.entries(state.runMinutes ?? {}).filter(([id, minutes]) => restored.find((item) => item.id === id)?.minutes === minutes),
+    );
+    return {
+      ...state,
+      runItems: restored,
+      runRemovedIds: (state.runRemovedIds ?? []).filter((id) => !ids.has(id)),
+      runMinutes,
+      undoReorder: undefined,
+    };
   }
 
   if (command.type === "message") {
@@ -298,14 +364,16 @@ function editPlan(state: RunState, newPlan: Plan, now: number, oldPlan?: Plan): 
   if (state.runItems) {
     const byId = new Map(newPlan.items.map((item) => [item.id, item]));
     const runOnly = new Set(state.runOnlyIds ?? []);
+    const removed = new Set(state.runRemovedIds ?? []);
     const merged: Item[] = [];
     for (const item of state.runItems) {
       const updated = byId.get(item.id);
-      if (updated) merged.push(updated);
+      // Keep minutes changed for this run only; take everything else from the saved plan.
+      if (updated) merged.push(state.runMinutes?.[item.id] !== undefined ? { ...updated, minutes: state.runMinutes[item.id]! } : updated);
       else if (runOnly.has(item.id)) merged.push(item);
     }
     newPlan.items.forEach((item, index) => {
-      if (merged.some((existing) => existing.id === item.id)) return;
+      if (removed.has(item.id) || merged.some((existing) => existing.id === item.id)) return;
       const previousId = newPlan.items[index - 1]?.id;
       const at = previousId ? merged.findIndex((existing) => existing.id === previousId) + 1 : 0;
       merged.splice(at, 0, item);
@@ -341,7 +409,12 @@ function editPlan(state: RunState, newPlan: Plan, now: number, oldPlan?: Plan): 
   };
 }
 
-export function derive(state: RunState, plan: Plan, now: number): DerivedView {
+export function derive(
+  state: RunState,
+  plan: Plan,
+  now: number,
+  options: { defaultWarnSeconds?: number; dangerSeconds?: number } = {},
+): DerivedView {
   const items = itemsFor(state, plan);
   const effectivePlan = { ...plan, items };
   const live = isLive(state);
@@ -354,6 +427,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     item,
     scheduledStart: starts[rowIndex]!,
     actualStart: state.actualStarts?.[item.id],
+    skipped: state.skipped.includes(item.id) && !state.actualStarts?.[item.id],
     status: state.status === "finished" || rowIndex < currentIndex
       ? "done" as const
       : rowIndex === currentIndex && live ? "current" as const : "upcoming" as const,
@@ -382,9 +456,12 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     ? now + Math.max(0, timeLeftMs) + remainingMs
     : projectedFinish(effectivePlan, state.runDate, state.shiftMs);
 
-  const warnAt = (current?.warnAtSeconds ?? 120) * 1000;
+  const warnAt = (current?.warnAtSeconds ?? options.defaultWarnSeconds ?? 120) * 1000;
+  const dangerAt = Math.min(options.dangerSeconds ?? 0, warnAt / 1000) * 1000;
   const colourBand =
-    status === "overrun" ? "over" : live && timeLeftMs > 0 && timeLeftMs <= warnAt ? "warning" : "normal";
+    status === "overrun" ? "over"
+      : live && timeLeftMs > 0 && timeLeftMs <= dangerAt ? "danger"
+        : live && timeLeftMs > 0 && timeLeftMs <= warnAt ? "warning" : "normal";
 
   return {
     status,
@@ -397,6 +474,7 @@ export function derive(state: RunState, plan: Plan, now: number): DerivedView {
     behindAheadMs: finish - plannedFinish,
     projectedFinish: finish,
     plannedFinish,
+    hasRunChanges: isLive(state) && runDiffers(state, plan),
     message: state.message,
     blackout: state.blackout,
     banner: state.banner,
