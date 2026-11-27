@@ -14,7 +14,7 @@ describe("renderer time formatting", () => {
   });
 
   it("formats wall clocks and schedule differences", () => {
-    expect(formatClock(Date.UTC(2026, 0, 1, 9, 5))).toMatch(/9:05/);
+    expect(formatClock(new Date(2026, 0, 1, 9, 5).getTime())).toMatch(/9:05/);
     expect(formatBehindAhead(180_000)).toBe("3 min behind");
     expect(formatBehindAhead(-120_000)).toBe("2 min ahead");
     expect(formatBehindAhead(0)).toBe("On time");

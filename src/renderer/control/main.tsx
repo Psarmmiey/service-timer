@@ -311,6 +311,8 @@ function ControlApp() {
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
   const messageRef = useRef<HTMLInputElement>(null);
+  const stateRef = useRef<AppState | null>(null);
+  stateRef.current = state;
 
   useEffect(() => window.api.onState(setState), []);
 
@@ -341,8 +343,9 @@ function ControlApp() {
   };
 
   useEffect(() => {
-    if (!state) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      const latest = stateRef.current;
+      if (!latest) return;
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) {
         if (event.key === "Escape") {
@@ -362,7 +365,15 @@ function ControlApp() {
       switch (event.key.toLowerCase()) {
         case " ":
           event.preventDefault();
-          toggleMain();
+          if (latest.view.status === "idle" || latest.view.status === "waiting") {
+            const plannedStart = latest.view.scheduleRows[0]?.scheduledStart ?? latest.now;
+            if (latest.now - plannedStart > 60_000) setLateStartOpen(true);
+            else send({ type: "start" });
+          } else if (latest.view.status === "paused") {
+            send({ type: "resume" });
+          } else if (["running", "paused", "overrun"].includes(latest.view.status)) {
+            send({ type: "pause" });
+          }
           break;
         case "arrowright":
         case "n":
@@ -386,7 +397,7 @@ function ControlApp() {
           break;
         case "b":
           event.preventDefault();
-          send({ type: "blackout", on: !state.view.blackout });
+          send({ type: "blackout", on: !latest.view.blackout });
           break;
         case "m":
           event.preventDefault();
@@ -400,7 +411,7 @@ function ControlApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [state]);
+  }, []);
 
   if (!state) {
     return <main className="flex h-full items-center justify-center text-sm text-zinc-500">Loading service…</main>;
