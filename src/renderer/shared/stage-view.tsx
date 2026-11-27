@@ -9,7 +9,14 @@ type StageViewProps = {
 
 export function StageView({ state, className = "", preview = false }: StageViewProps) {
   if (!state) {
-    return <div className={`stage-view ${className}`} aria-label="Stage preview">Loading…</div>;
+    return (
+      <div
+        className={`stage-view ${className}`}
+        aria-label={preview ? "Stage preview" : "Stage display"}
+      >
+        Loading…
+      </div>
+    );
   }
 
   const { view } = state;
