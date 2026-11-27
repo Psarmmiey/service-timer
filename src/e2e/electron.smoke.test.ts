@@ -93,6 +93,9 @@ describe("electron milestone 3 UI", () => {
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
     await controlWindow.screenshot({ path: join(screenshotDir, "control-1366x720.png") });
+    await stageWindow.setViewportSize({ width: 1920, height: 1080 });
+    await stageWindow.screenshot({ path: join(screenshotDir, "stage-running-1920x1080.png") });
+    await stageWindow.setViewportSize({ width: 800, height: 600 });
   }, 60_000);
 
   it("shows warning and overrun states on the stage", async () => {
@@ -116,6 +119,8 @@ describe("electron milestone 3 UI", () => {
       await stageWindow.setViewportSize(size);
       const bounds = await stageWindow.locator(".stage-digits").boundingBox();
       expect(bounds).toBeTruthy();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width);
       if (size.width === 1920) {
         expect(bounds!.height).toBeGreaterThanOrEqual(size.height * 0.6);
       }

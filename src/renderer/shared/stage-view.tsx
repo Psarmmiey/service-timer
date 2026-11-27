@@ -36,7 +36,9 @@ export function StageView({ state, className = "", preview = false }: StageViewP
     ? firstRow
       ? `First: ${firstRow.item.title} · ${formatClock(firstRow.scheduledStart)}`
       : ""
-    : view.next
+    : overrun
+      ? ""
+      : view.next
       ? `Next: ${view.next.title} (${view.next.minutes} min)`
       : finished
         ? "Thank you"
