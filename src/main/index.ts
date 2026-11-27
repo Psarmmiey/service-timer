@@ -39,6 +39,16 @@ function isInteger(value: unknown): value is number {
   return isFiniteNumber(value) && Number.isInteger(value);
 }
 
+function isSettings(value: unknown): value is Settings {
+  if (!isRecord(value)) return false;
+  return (value.stageDisplayId === undefined || isInteger(value.stageDisplayId))
+    && (value.timeUpStyle === "whole-screen" || value.timeUpStyle === "digits")
+    && typeof value.pulse === "boolean"
+    && typeof value.openAtLogin === "boolean"
+    && typeof value.trayOnClose === "boolean"
+    && (value.keepAwake === undefined || typeof value.keepAwake === "boolean");
+}
+
 function isItem(value: unknown): value is Item {
   if (!isRecord(value)) return false;
   return typeof value.id === "string"
@@ -81,7 +91,7 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return Array.isArray(value.plans) && value.plans.every(isPlan)
         && typeof value.activePlanId === "string";
     case "saveSettings":
-      return isRecord(value.settings);
+      return isSettings(value.settings);
     case "startChoice":
       return (value.mode === "catchUp" || value.mode === "fromTop" || value.mode === "fromItem")
         && (value.index === undefined || isInteger(value.index));
