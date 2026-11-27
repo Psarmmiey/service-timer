@@ -121,6 +121,17 @@ describe("reference plan acceptance criteria", () => {
     expect(view.timeLeftMs).toBe(5 * MINUTE_MS);
     expect(view.behindAheadMs).toBe(2 * MINUTE_MS);
   });
+
+  it("AC-11 recovered sermon run resumes from persisted clock state", () => {
+    const start = at("10:25");
+    let state = createIdleState(referencePlan, "2026-11-29");
+    state = reduce(state, { type: "startChoice", mode: "fromItem", index: 4 }, start, referencePlan);
+    const now = at("10:52");
+    const view = derive({ ...state, banner: "Recovered: this run resumed from the clock." }, referencePlan, now);
+    expect(view.current?.id).toBe("sermon");
+    expect(view.timeLeftMs).toBe(13 * MINUTE_MS);
+    expect(view.banner).toContain("Recovered");
+  });
 });
 
 describe("engine edge cases", () => {

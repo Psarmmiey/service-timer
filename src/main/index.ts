@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
 import { join } from "node:path";
-import { createWaitingState, derive, reduce, type Item, type Plan, type RunState } from "../engine";
-import { localDateString } from "../engine/schedule";
+import { createIdleState, createWaitingState, derive, reduce, type Item, type Plan, type RunState } from "../engine";
+import { chooseTodaysPlan, localDateString } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
-import type { AppState, DisplayStatus, TimerCommand } from "../shared/ipc";
+import { createJsonStore, type JsonStore } from "./storage";
+import type { AppState, DisplayStatus, Settings, TimerCommand } from "../shared/ipc";
 
 const STAGE_BANNER = "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
 const TICK_MS = 250;
@@ -76,6 +77,11 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "undoReorder":
     case "clearMessage":
       return true;
+    case "savePlans":
+      return Array.isArray(value.plans) && value.plans.every(isPlan)
+        && typeof value.activePlanId === "string";
+    case "saveSettings":
+      return isRecord(value.settings);
     case "startChoice":
       return (value.mode === "catchUp" || value.mode === "fromTop" || value.mode === "fromItem")
         && (value.index === undefined || isInteger(value.index));
@@ -106,8 +112,22 @@ let controlWindow: BrowserWindow | null = null;
 let stageWindow: BrowserWindow | null = null;
 let placement: StagePlacement | null = null;
 let state: RunState;
+let currentPlan: Plan = defaultPlan;
 let tickTimer: NodeJS.Timeout | null = null;
 let hotPlugTimer: NodeJS.Timeout | null = null;
+let plans: Plan[] = [defaultPlan];
+let activePlanId = defaultPlan.id;
+let settings: Settings = {
+  timeUpStyle: "whole-screen",
+  pulse: true,
+  openAtLogin: true,
+  trayOnClose: false,
+  keepAwake: true,
+};
+let store: JsonStore | null = null;
+let tray: Tray | null = null;
+let powerBlockerId: number | null = null;
+let persistenceTimer: NodeJS.Timeout | null = null;
 
 function getDisplaySnapshot(): DisplayInfo[] {
   const displays = screen.getAllDisplays().map((display) => ({
@@ -149,9 +169,12 @@ function getDisplayStatus(): DisplayStatus {
 function toAppState(now: number): AppState {
   return {
     now,
-    view: derive(state, defaultPlan, now),
-    plan: defaultPlan,
+    view: derive(state, currentPlan, now),
+    plan: currentPlan,
     display: getDisplayStatus(),
+    plans,
+    activePlanId,
+    settings,
   };
 }
 
@@ -159,6 +182,24 @@ function broadcastState(now = Date.now()): void {
   const payload = toAppState(now);
   controlWindow?.webContents.send("state", payload);
   stageWindow?.webContents.send("state", payload);
+}
+
+function persistRunState(): void {
+  store?.write("run-state.json", state);
+}
+
+function updatePowerBlocker(): void {
+  const active = settings.keepAwake !== false && (
+    state.status === "running"
+    || state.status === "paused"
+    || state.status === "waiting"
+  );
+  if (active && powerBlockerId === null) {
+    powerBlockerId = powerSaveBlocker.start("prevent-display-sleep");
+  } else if (!active && powerBlockerId !== null) {
+    powerSaveBlocker.stop(powerBlockerId);
+    powerBlockerId = null;
+  }
 }
 
 function focusControlWindow(): void {
@@ -199,7 +240,7 @@ function applyStageWindowMode(targetWindow: BrowserWindow): void {
 }
 
 function updatePlacement(): void {
-  placement = chooseStagePlacement(getDisplaySnapshot(), placement?.preferredDisplayId);
+  placement = chooseStagePlacement(getDisplaySnapshot(), settings.stageDisplayId ?? placement?.preferredDisplayId);
   if (!stageWindow) return;
   applyStageWindowMode(stageWindow);
   broadcastState();
@@ -235,6 +276,33 @@ function createControlWindow(): BrowserWindow {
 
   window.on("closed", () => {
     controlWindow = null;
+  });
+
+  window.on("close", (event) => {
+    if (process.env.NODE_ENV === "test") return;
+    if (settings.trayOnClose && state.status !== "running" && state.status !== "paused") {
+      event.preventDefault();
+      createTray();
+      window.hide();
+      return;
+    }
+    if (state.status === "running" || state.status === "paused") {
+      event.preventDefault();
+      void dialog.showMessageBox(window, {
+        type: "warning",
+        buttons: ["Stop timer and close", "Cancel"],
+        defaultId: 1,
+        cancelId: 1,
+        title: "Close Service Timer?",
+        message: "Stop the timer and close?",
+      }).then((result) => {
+        if (result.response === 0) {
+          state = { ...state, status: "finished" };
+          persistRunState();
+          app.quit();
+        }
+      });
+    }
   });
 
   window.webContents.on("did-finish-load", () => {
@@ -281,7 +349,8 @@ function startTickLoop(): void {
   if (tickTimer) clearInterval(tickTimer);
   tickTimer = setInterval(() => {
     const now = Date.now();
-    state = reduce(state, { type: "tick" }, now, defaultPlan);
+    state = reduce(state, { type: "tick" }, now, currentPlan);
+    updatePowerBlocker();
     broadcastState(now);
   }, TICK_MS);
 }
@@ -292,7 +361,22 @@ function registerIpc(): void {
 
     try {
       const now = Date.now();
-      state = reduce(state, payload, now, defaultPlan);
+      if (payload.type === "savePlans") {
+        plans = payload.plans;
+        activePlanId = payload.activePlanId;
+        currentPlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
+        store?.write("plans.json", { plans, activePlanId });
+        state = reduce(state, { type: "editPlan", plan: currentPlan }, now, currentPlan);
+      } else if (payload.type === "saveSettings") {
+        settings = payload.settings;
+        app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+        store?.write("settings.json", settings);
+        updatePlacement();
+      } else {
+        state = reduce(state, payload, now, currentPlan);
+      }
+      persistRunState();
+      updatePowerBlocker();
       broadcastState(now);
     } catch (error) {
       console.error("Ignoring invalid timer command", error);
@@ -312,6 +396,54 @@ function createWindows(): void {
   updatePlacement();
 }
 
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(nativeImage.createEmpty());
+  const menu = Menu.buildFromTemplate([
+    { label: "Show Service Timer", click: () => focusControlWindow() },
+    { label: "Quit", click: () => app.quit() },
+  ]);
+  tray.setToolTip("Service Timer");
+  tray.setContextMenu(menu);
+  tray.on("click", () => focusControlWindow());
+}
+
+function loadPersistentData(): void {
+  store = createJsonStore(app.getPath("userData"));
+  const planFile = store.read<{ plans?: Plan[]; activePlanId?: string }>("plans.json", {});
+  if (planFile.plans?.length) plans = planFile.plans;
+  activePlanId = planFile.activePlanId && plans.some((plan) => plan.id === planFile.activePlanId)
+    ? planFile.activePlanId
+    : plans[0]!.id;
+  currentPlan = chooseTodaysPlan(plans, new Date(), activePlanId) ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
+
+  settings = { ...settings, ...store.read<Partial<Settings>>("settings.json", {}) };
+  app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+
+  const saved = store.read<RunState | null>("run-state.json", null);
+  const today = localDateString(new Date());
+  if (process.env.NODE_ENV !== "test" && saved?.runDate === today && ["running", "paused"].includes(saved.status)) {
+    state = { ...saved, banner: "Recovered: this run resumed from the clock." };
+  } else {
+    const waiting = createWaitingState(currentPlan, today);
+    const now = Date.now();
+    const start = currentPlan.autoStart
+      ? new Date(now).setHours(
+          Number(currentPlan.startTime.split(":")[0]),
+          Number(currentPlan.startTime.split(":")[1]),
+          0,
+          0,
+        )
+      : Number.NaN;
+    state = !currentPlan.autoStart
+      ? createIdleState(currentPlan, today)
+      : currentPlan.autoStart && now < start && start - now <= 30 * 60_000
+        ? waiting
+        : reduce(waiting, { type: "tick" }, now, currentPlan);
+  }
+  if (state.status !== "idle" && state.status !== "finished") persistRunState();
+}
+
 const singleInstanceLock = app.requestSingleInstanceLock();
 
 if (!singleInstanceLock) {
@@ -322,13 +454,14 @@ if (!singleInstanceLock) {
   });
 
   app.whenReady().then(() => {
-    const runDate = localDateString(new Date());
-    state = createWaitingState(defaultPlan, runDate);
+    loadPersistentData();
 
     registerIpc();
     registerDisplayListeners();
     createWindows();
     startTickLoop();
+    updatePowerBlocker();
+    persistenceTimer = setInterval(persistRunState, 5_000);
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -342,5 +475,11 @@ if (!singleInstanceLock) {
 app.on("window-all-closed", () => {
   if (tickTimer) clearInterval(tickTimer);
   if (hotPlugTimer) clearTimeout(hotPlugTimer);
+  if (persistenceTimer) clearInterval(persistenceTimer);
+  persistRunState();
+  if (powerBlockerId !== null) {
+    powerSaveBlocker.stop(powerBlockerId);
+    powerBlockerId = null;
+  }
   app.quit();
 });

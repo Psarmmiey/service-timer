@@ -55,6 +55,8 @@ export function StageView({ state, className = "", preview = false }: StageViewP
     <div
       className={`stage-view ${className}`}
       data-over={overrun}
+      data-time-up-style={state.settings.timeUpStyle}
+      data-pulse={state.settings.pulse}
       aria-label={preview ? "Stage preview" : "Stage display"}
     >
       <span className="stage-clock">{formatClock(state.now)}</span>
