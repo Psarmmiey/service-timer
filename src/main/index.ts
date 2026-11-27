@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
-import { autoUpdater } from "electron-updater";
+// electron-updater is CommonJS; a named ESM import crashes the main process on launch.
+import electronUpdater from "electron-updater";
 import { join } from "node:path";
 import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
@@ -7,6 +8,9 @@ import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./d
 import { createJsonStore, type JsonStore } from "./storage";
 import type { AppState, DisplayStatus, Settings, TimerCommand, UpdateStatus } from "../shared/ipc";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
+
+// Loaded on first use, not at startup.
+const autoUpdater = () => electronUpdater.autoUpdater;
 
 const STAGE_BANNER = "No second screen found. Check the cable and that Windows is set to Extend (Win+P).";
 const TICK_MS = 250;
@@ -450,30 +454,30 @@ function checkForUpdates(): void {
   if (!canCheckForUpdates(state.status)) return;
   updateStatus = { ...updateStatus, state: "checking", message: undefined };
   broadcastState();
-  void autoUpdater.checkForUpdates();
+  void autoUpdater().checkForUpdates();
 }
 
 function setupUpdater(): void {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on("checking-for-update", () => {
+  autoUpdater().autoDownload = true;
+  autoUpdater().autoInstallOnAppQuit = false;
+  autoUpdater().on("checking-for-update", () => {
     updateStatus = { ...updateStatus, state: "checking" };
     broadcastState();
   });
-  autoUpdater.on("update-available", (info) => {
+  autoUpdater().on("update-available", (info) => {
     updateStatus = { ...updateStatus, state: "downloading", version: info.version };
     broadcastState();
   });
-  autoUpdater.on("update-not-available", () => {
+  autoUpdater().on("update-not-available", () => {
     updateStatus = { ...updateStatus, state: "idle", message: "No updates available" };
     broadcastState();
   });
-  autoUpdater.on("update-downloaded", (event) => {
+  autoUpdater().on("update-downloaded", (event) => {
     downloadedUpdateVersion = event.version;
     updateStatus = { ...updateStatus, state: "ready", version: event.version };
     broadcastState();
   });
-  autoUpdater.on("error", (error) => {
+  autoUpdater().on("error", (error) => {
     updateStatus = { ...updateStatus, state: "error", message: error.message };
     broadcastState();
   });
@@ -490,7 +494,7 @@ function setupUpdater(): void {
 
 function restartToUpdate(): void {
   if (!downloadedUpdateVersion || !canInstallUpdate(state.status)) return;
-  autoUpdater.quitAndInstall(false, true);
+  autoUpdater().quitAndInstall(false, true);
 }
 
 function registerIpc(): void {
@@ -647,6 +651,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   if (downloadedUpdateVersion && canInstallUpdate(state.status)) {
-    autoUpdater.quitAndInstall(false, true);
+    autoUpdater().quitAndInstall(false, true);
   }
 });
