@@ -112,6 +112,10 @@ describe("electron milestone 3 UI", () => {
     await stageWindow.waitForSelector(".stage-title:has-text('TIME UP')");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
     expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
+    await stageWindow.setViewportSize({ width: 1920, height: 1080 });
+    const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
+    await mkdir(screenshotDir, { recursive: true });
+    await stageWindow.screenshot({ path: join(screenshotDir, "stage-time-up-1920x1080.png") });
   }, 30_000);
 
   it("keeps countdown digits large at supported stage resolutions", async () => {
