@@ -491,7 +491,7 @@ function ControlApp() {
           <div className="flex items-center gap-2" data-tour="status">
             <Badge className={status.className}>{status.label}</Badge>
             {live ? <Badge className={behind ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" : ""}>{formatBehindAhead(view.behindAheadMs)}</Badge> : null}
-            {view.blackout ? <Badge className="border-zinc-950 bg-zinc-950 text-zinc-50"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
+            {view.blackout ? <Badge className="border-red-700 bg-red-700 text-[#fff]"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
             {state.web.running && state.web.clients > 0 ? (
               <Button
                 variant="outline"
@@ -612,6 +612,8 @@ function ControlApp() {
               <Button
                 className="h-[64px] w-[180px] text-base font-semibold"
                 data-tour="pause"
+                // Amber while paused, so a forgotten pause is hard to miss.
+                variant={view.paused && live ? "attention" : "outline"}
                 disabled={!live}
                 onClick={() => toggleRef.current(state)}
               >
@@ -646,10 +648,11 @@ function ControlApp() {
                 size="sm"
                 data-tour="blackout"
                 aria-pressed={view.blackout}
-                variant={view.blackout ? "default" : "outline"}
+                variant={view.blackout ? "destructive" : "outline"}
+                aria-label={view.blackout ? "Stage blacked out. Show the timer" : "Blackout"}
                 onClick={() => send({ type: "blackout", on: !view.blackout })}
               >
-                <EyeOff className="size-4" /> {view.blackout ? "Show timer" : "Blackout"}
+                <EyeOff className="size-4" /> {view.blackout ? "Blacked out · Show timer" : "Blackout"}
               </Button>
               <span className="ml-auto hidden text-[11px] text-zinc-500 xl:inline">→ next · Space pause · +/− minute · B blackout · ? help</span>
             </div>
@@ -749,7 +752,7 @@ function ControlApp() {
                         })}><Play className="size-4" /></Button></Tooltip>
                       </span>
                     ) : (
-                      <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
+                      <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current && view.paused ? "border-amber-400 bg-amber-400 text-[#18181b]" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
                         {current ? (overrun ? "Time up" : view.paused ? "Paused" : "Now") : row.skipped ? "Skipped" : row.status === "done" ? <><Check className="mr-1 size-3" /> Done</> : `${row.item.minutes} min`}
                       </Badge>
                     )}

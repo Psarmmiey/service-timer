@@ -153,7 +153,7 @@ describe("stage messages", () => {
   it("is hidden during blackout and comes back afterwards", async () => {
     await control.getByRole("radio", { name: "Please wrap up" }).click();
     await expectStageMessage("Please wrap up");
-    const blackout = control.getByRole("button", { name: /^(Blackout|Show timer)$/ });
+    const blackout = control.getByRole("button", { name: /^(Blackout|Stage blacked out\. Show the timer)$/ });
     await blackout.click();
     await stage.waitForSelector('[aria-label="Stage is blacked out"]');
     expect(await stageMessage().count()).toBe(0);

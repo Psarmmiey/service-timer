@@ -440,3 +440,7 @@ Do next queues an item straight after the current one; the current item carries 
 ### Decision: seeing and disconnecting phones (27 Nov 2026)
 
 Each person enters their name when signing in on a phone (remembered on that phone). The laptop shows a toast when a phone connects ("Ada connected from a phone", with the device and network address), and the phones button in the header opens Settings, Phone control, at a list of signed-in phones: name, device and browser, address, connected or last seen, and their last action (for example "Next at 10:42"). Any phone can be disconnected from that list. Its page returns to sign-in with "The timer laptop disconnected this phone." Because a disconnected phone could sign back in with the PIN, the same check offers "Disconnect and change PIN", which signs every phone out. Names are self-reported, so the device and address are shown alongside to spot a stranger.
+
+### Decision: colour only for states (27 Nov 2026)
+
+Buttons stay black and white. Colour is kept for states that need noticing, with one meaning each: green for running or connected, amber for paused, behind or warning, red for time up, blackout and destructive actions. So while paused, the Pause button becomes an amber Resume (laptop and phone, and the Paused tag in the schedule); while the stage is blacked out, the Blackout button turns red and reads "Blacked out · Show timer" (phone: "Stage blacked out / Tap to show the timer"), matching a red badge in the header.

@@ -21,6 +21,9 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   button:disabled { opacity:.35; }
   .primary { background:var(--text); color:var(--bg); border-color:var(--text); }
   .danger { color:#fca5a5; }
+  /* Colour only for states that need noticing: amber while paused, red while the stage is blacked out. */
+  .attention { background:var(--amber); color:#0a0a0a; border-color:var(--amber); font-weight:700; }
+  .alert { background:var(--red); color:#fff; border-color:var(--red); font-weight:700; }
   .hidden { display:none !important; }
   header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
   header .plan { font-weight:700; font-size:15px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -278,6 +281,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     $("next-btn-sub").textContent = s.next ? s.next.title : "Ends the service";
     $("next-btn").firstChild.textContent = s.next ? "Next item " : "Finish service ";
     $("pause-btn").textContent = s.paused ? "Resume" : "Pause";
+    $("pause-btn").classList.toggle("attention", Boolean(s.paused));
 
     if (!live) {
       $("late-btns").classList.toggle("hidden", !s.late);
@@ -291,8 +295,13 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     var msg = s.message ? s.message.text : "";
     Array.prototype.forEach.call(document.querySelectorAll("#chips button"), function (b) { b.classList.toggle("on", b.textContent === msg); });
     $("clear-btn").disabled = !msg;
-    $("blackout-btn").textContent = s.blackout ? "Show the timer" : "Blackout stage";
-    $("blackout-btn").classList.toggle("primary", s.blackout);
+    var bo = $("blackout-btn");
+    if (bo.dataset.on !== String(Boolean(s.blackout))) {
+      bo.dataset.on = String(Boolean(s.blackout));
+      bo.textContent = s.blackout ? "Stage blacked out" : "Blackout stage";
+      if (s.blackout) { var hint = document.createElement("small"); hint.textContent = "Tap to show the timer"; hint.style.cssText = "display:block;font-weight:500;font-size:13px;opacity:.9"; bo.appendChild(hint); }
+    }
+    $("blackout-btn").classList.toggle("alert", Boolean(s.blackout));
 
     renderOrder(s);
     var itemKey = s.current ? s.current.title : "";
