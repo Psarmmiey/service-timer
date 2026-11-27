@@ -12,7 +12,8 @@ export type Settings = {
 export type TimerCommand =
   | Command
   | { type: "savePlans"; plans: Plan[]; activePlanId: string }
-  | { type: "saveSettings"; settings: Settings };
+  | { type: "saveSettings"; settings: Settings }
+  | { type: "identifyDisplays" };
 
 export type DisplayStatus = {
   mode: "stage-window" | "single-monitor";

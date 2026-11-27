@@ -629,7 +629,7 @@ function SettingsDialog({
                 </SelectContent>
               </Select>
             </label>
-            <Button onClick={() => toast.info("Identify mode will flash each display briefly.")}>Identify screens</Button>
+            <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
             <label className="grid gap-1 text-sm font-medium">Time up style
               <ToggleGroup type="single" value={state.settings.timeUpStyle} onValueChange={(value) => value && update({ timeUpStyle: value as AppState["settings"]["timeUpStyle"] })}>
                 <ToggleGroupItem value="whole-screen">Whole screen red</ToggleGroupItem>

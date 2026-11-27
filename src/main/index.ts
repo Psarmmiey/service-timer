@@ -111,6 +111,8 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
       return typeof value.on === "boolean";
+    case "identifyDisplays":
+      return true;
     case "tick":
       return true;
     default:
@@ -365,13 +367,44 @@ function startTickLoop(): void {
   }, TICK_MS);
 }
 
+function identifyDisplays(): void {
+  screen.getAllDisplays().forEach((display, index) => {
+    const overlay = new BrowserWindow({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      show: false,
+    });
+    overlay.setIgnoreMouseEvents(true);
+    void overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+      <html>
+        <body style="margin:0;background:rgba(24,24,27,.72);display:grid;place-items:center;">
+          <div style="width:180px;height:180px;border-radius:24px;background:#ef4444;color:white;display:grid;place-items:center;font:700 96px sans-serif;">${index + 1}</div>
+        </body>
+      </html>
+    `)}`);
+    overlay.show();
+    setTimeout(() => {
+      if (!overlay.isDestroyed()) overlay.close();
+    }, 2500);
+  });
+}
+
 function registerIpc(): void {
   ipcMain.on("command", (_, payload: unknown) => {
     if (!isTimerCommand(payload)) return;
 
     try {
       const now = Date.now();
-      if (payload.type === "savePlans") {
+      if (payload.type === "identifyDisplays") {
+        identifyDisplays();
+      } else if (payload.type === "savePlans") {
         plans = payload.plans;
         activePlanId = payload.activePlanId;
         currentPlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
