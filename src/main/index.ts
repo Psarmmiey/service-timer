@@ -441,7 +441,11 @@ function createWindows(): void {
 
 function createTray(): void {
   if (tray) return;
-  tray = new Tray(nativeImage.createEmpty());
+  const trayIcon = nativeImage.createFromPath(join(
+    app.isPackaged ? process.resourcesPath : app.getAppPath(),
+    app.isPackaged ? "tray-icon.svg" : "resources/tray-icon.svg",
+  ));
+  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createFromNamedImage("NSApplicationIcon") : trayIcon);
   const menu = Menu.buildFromTemplate([
     { label: "Show Service Timer", click: () => focusControlWindow() },
     { label: "Quit", click: () => app.quit() },

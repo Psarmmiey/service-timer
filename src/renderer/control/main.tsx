@@ -382,6 +382,8 @@ function PlanEditorDialog({
   const [plans, setPlans] = useState<Plan[]>(state.plans);
   const [activeId, setActiveId] = useState(state.activePlanId);
   const [draft, setDraft] = useState<Plan | null>(null);
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDraftSave = useRef<{ plans: Plan[]; activePlanId: string } | null>(null);
 
   useEffect(() => {
     setPlans(state.plans);
@@ -392,9 +394,25 @@ function PlanEditorDialog({
     if (!draft) setDraft(plans.find((plan) => plan.id === activeId) ?? plans[0] ?? null);
   }, [draft, plans, activeId]);
 
+  useEffect(() => () => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+  }, []);
+
   const save = (next: Plan[], nextActiveId = activeId) => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = null;
+    pendingDraftSave.current = null;
     setPlans(next);
     send({ type: "savePlans", plans: next, activePlanId: nextActiveId });
+  };
+
+  const flushDraftSave = () => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = null;
+    if (pendingDraftSave.current) {
+      send({ type: "savePlans", ...pendingDraftSave.current });
+      pendingDraftSave.current = null;
+    }
   };
 
   const updateDraft = (patch: Partial<Plan>) => {
@@ -402,7 +420,10 @@ function PlanEditorDialog({
     const next = { ...draft, ...patch, updatedAt: new Date().toISOString() };
     setDraft(next);
     const nextPlans = plans.map((plan) => plan.id === next.id ? next : plan);
-    save(nextPlans);
+    setPlans(nextPlans);
+    pendingDraftSave.current = { plans: nextPlans, activePlanId: activeId };
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(flushDraftSave, 400);
   };
 
   const updateItem = (index: number, patch: Partial<Item>) => {
@@ -463,7 +484,10 @@ function PlanEditorDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) flushDraftSave();
+      onOpenChange(nextOpen);
+    }}>
       <DialogContent className="w-[min(1180px,calc(100vw-32px))] max-h-[calc(100vh-32px)] overflow-hidden p-0">
         <div className="flex h-[660px] max-h-[calc(100vh-32px)]">
           <aside className="w-[300px] shrink-0 border-r border-zinc-200 p-3">
