@@ -87,6 +87,19 @@ input {
   animation: overrun-pulse 2.4s ease-in-out infinite;
 }
 
+/* At 0:00: three quick flashes, then steady red (or the slow pulse). */
+.stage-view[data-over="true"][data-flash-zero="true"] {
+  animation: zero-flash .5s steps(1, end) 3;
+}
+
+.stage-view[data-over="true"][data-flash-zero="true"][data-pulse="true"] {
+  animation: zero-flash .5s steps(1, end) 3, overrun-pulse 2.4s ease-in-out 1.5s infinite;
+}
+
+.stage-view[data-over="true"][data-time-up-style="digits"][data-flash-zero="true"] .stage-digits {
+  animation: zero-flash-digits .5s steps(1, end) 3;
+}
+
 .stage-view[data-over="true"][data-time-up-style="digits"] {
   background: #0a0a0a;
   animation: none;
@@ -204,6 +217,11 @@ input {
   color: #fbbf24;
 }
 
+/* The last seconds before 0:00 (Settings, "Turn red when"). */
+.stage-digits[data-danger="true"] {
+  color: #ff3b3b;
+}
+
 .stage-digits[data-clock="true"] {
   color: #d4d4d8;
 }
@@ -259,6 +277,16 @@ input {
   50% { background: #b90000; }
 }
 
+@keyframes zero-flash {
+  0% { background: #0a0a0a; }
+  50% { background: #d00000; }
+}
+
+@keyframes zero-flash-digits {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
 @keyframes message-flash {
   0%, 100% { opacity: 1; }
   50% { opacity: .45; }
@@ -266,6 +294,7 @@ input {
 
 @media (prefers-reduced-motion: reduce) {
   .stage-view[data-over="true"],
+  .stage-view[data-over="true"] .stage-digits,
   .stage-message[data-flash="true"] {
     animation: none;
   }

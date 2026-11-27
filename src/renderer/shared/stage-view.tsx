@@ -66,10 +66,10 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   const digits = !state || !view
     ? ""
     : countdown
-      ? formatStageTime(untilStartMs)
+      ? formatStageTime(untilStartMs, state.settings.overtimeSign)
       : clockOnly
         ? formatClock(state.now)
-        : formatStageTime(view.timeLeftMs);
+        : formatStageTime(view.timeLeftMs, state.settings.overtimeSign);
   // Anything that changes the space around the digits refits them before the next paint.
   const fit = useFitText(digits, `${overrun}|${view?.paused}|${view?.message?.text.length ?? -1}|${view?.blackout}`);
 
@@ -108,6 +108,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       data-message={Boolean(view.message)}
       data-time-up-style={state.settings.timeUpStyle}
       data-pulse={state.settings.pulse}
+      data-flash-zero={state.settings.flashAtZero !== false}
       aria-label={label}
     >
       {clockOnly ? null : <span className="stage-clock">{formatClock(state.now)}</span>}
@@ -120,6 +121,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
         <div
           className="stage-digits condensed"
           data-warning={view.colourBand === "warning"}
+          data-danger={view.colourBand === "danger"}
           data-paused={view.paused}
           data-clock={clockOnly}
           data-long={digits.length > 5}

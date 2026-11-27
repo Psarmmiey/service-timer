@@ -341,7 +341,12 @@ function editPlan(state: RunState, newPlan: Plan, now: number, oldPlan?: Plan): 
   };
 }
 
-export function derive(state: RunState, plan: Plan, now: number, options: { defaultWarnSeconds?: number } = {}): DerivedView {
+export function derive(
+  state: RunState,
+  plan: Plan,
+  now: number,
+  options: { defaultWarnSeconds?: number; dangerSeconds?: number } = {},
+): DerivedView {
   const items = itemsFor(state, plan);
   const effectivePlan = { ...plan, items };
   const live = isLive(state);
@@ -384,8 +389,11 @@ export function derive(state: RunState, plan: Plan, now: number, options: { defa
     : projectedFinish(effectivePlan, state.runDate, state.shiftMs);
 
   const warnAt = (current?.warnAtSeconds ?? options.defaultWarnSeconds ?? 120) * 1000;
+  const dangerAt = Math.min(options.dangerSeconds ?? 0, warnAt / 1000) * 1000;
   const colourBand =
-    status === "overrun" ? "over" : live && timeLeftMs > 0 && timeLeftMs <= warnAt ? "warning" : "normal";
+    status === "overrun" ? "over"
+      : live && timeLeftMs > 0 && timeLeftMs <= dangerAt ? "danger"
+        : live && timeLeftMs > 0 && timeLeftMs <= warnAt ? "warning" : "normal";
 
   return {
     status,

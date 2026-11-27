@@ -69,7 +69,8 @@ export type DerivedView = {
   current: Item | null;
   next: Item | null;
   timeLeftMs: number;
-  colourBand: "normal" | "warning" | "over";
+  /** warning = amber, danger = red digits in the last seconds before zero, over = time up. */
+  colourBand: "normal" | "warning" | "danger" | "over";
   scheduleRows: ScheduleRow[];
   behindAheadMs: number;
   projectedFinish: number;

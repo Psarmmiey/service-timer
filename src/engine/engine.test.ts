@@ -401,3 +401,14 @@ describe("Sunday readiness regressions", () => {
   });
 });
 
+
+describe("final red stage before zero", () => {
+  it("turns red digits in the last seconds, amber before that", () => {
+    const state = reduce(createIdleState(referencePlan, "2026-11-29"), { type: "startChoice", mode: "fromItem", index: 0 }, at("09:45"), referencePlan);
+    const options = { dangerSeconds: 30 };
+    expect(derive(state, referencePlan, at("09:48:30"), options).colourBand).toBe("warning");
+    expect(derive(state, referencePlan, at("09:49:31"), options).colourBand).toBe("danger");
+    expect(derive(state, referencePlan, at("09:50:01"), options).colourBand).toBe("over");
+    expect(derive(state, referencePlan, at("09:49:31")).colourBand).toBe("warning");
+  });
+});
