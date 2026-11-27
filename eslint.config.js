@@ -6,7 +6,11 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts"],
-    languageOptions: { globals: { ...globals.node } },
+    files: ["src/main/**/*.ts", "src/preload/**/*.ts", "src/e2e/**/*.ts", "electron.vite.config.ts"],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"],
+    languageOptions: { globals: globals.browser },
   },
 );
