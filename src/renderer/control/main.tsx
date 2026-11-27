@@ -120,6 +120,52 @@ function ConfirmDialog({
   );
 }
 
+function CustomAdjustDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [minutes, setMinutes] = useState("1");
+  const amount = Math.max(0, Math.round((Number(minutes) || 0) * MINUTE_MS));
+
+  const adjust = (direction: 1 | -1) => {
+    if (amount <= 0) return;
+    send({ type: "adjust", ms: amount * direction });
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(420px,calc(100vw-32px))]">
+        <DialogTitle>Adjust time</DialogTitle>
+        <DialogDescription>Enter a custom amount to add or subtract.</DialogDescription>
+        <div className="mt-5">
+          <label className="mb-2 block text-sm font-medium" htmlFor="custom-adjust-minutes">Amount</label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="custom-adjust-minutes"
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              value={minutes}
+              onChange={(event) => setMinutes(event.target.value)}
+              className="h-11"
+            />
+            <span className="text-sm text-zinc-500">minutes</span>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" disabled={amount <= 0} onClick={() => adjust(-1)}>Subtract</Button>
+          <Button disabled={amount <= 0} onClick={() => adjust(1)}>Add time</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function LateStartDialog({
   state,
   open,
@@ -261,6 +307,7 @@ function ControlApp() {
   const [confirm, setConfirm] = useState<"restart" | "stop" | null>(null);
   const [lateStartOpen, setLateStartOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
+  const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
   const messageRef = useRef<HTMLInputElement>(null);
@@ -416,14 +463,18 @@ function ControlApp() {
             </div>
 
             <div className="flex shrink-0 gap-3">
-              <Button variant="default" className="h-[60px] min-w-0 flex-1 text-base font-semibold" onClick={toggleMain} disabled={state.view.status === "finished"}>
+              <Button variant="outline" className="h-[60px] w-[220px] text-base font-semibold" onClick={toggleMain} disabled={state.view.status === "finished"}>
                 {paused || waiting ? <Play className="size-5" /> : <Pause className="size-5" />}
                 {waiting ? "Start now" : paused ? "Resume" : "Pause"}
               </Button>
               <HoldButton label="−1 min" amount={-MINUTE_MS} />
               <HoldButton label="+1 min" amount={MINUTE_MS} />
+              <Button variant="outline" className="h-[60px] w-[76px] flex-col gap-0 text-sm font-semibold" onClick={() => setCustomAdjustOpen(true)} disabled={!active}>
+                <span>Custom</span>
+                <span className="text-[11px] font-normal text-zinc-500">± time</span>
+              </Button>
               <div className="mx-1 w-px bg-zinc-200" />
-              <Button className="h-[60px] w-[150px] flex-col gap-0 text-sm font-semibold" onClick={() => send({ type: "next" })} disabled={!active}>
+              <Button variant="default" className="h-[60px] min-w-[150px] flex-1 flex-col gap-0 text-base font-semibold" onClick={() => send({ type: "next" })} disabled={!active}>
                 <span className="flex items-center gap-1">Next item <ArrowRight className="size-4" /></span>
                 <span className="max-w-full truncate text-[11px] font-normal text-zinc-500">{state.view.next?.title ?? "Finish service"}</span>
               </Button>
@@ -551,6 +602,7 @@ function ControlApp() {
       <ConfirmDialog action={confirm} onClose={() => setConfirm(null)} />
       <LateStartDialog state={state} open={lateStartOpen} onOpenChange={setLateStartOpen} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
+      <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
       <Toaster />
     </TooltipProvider>
   );

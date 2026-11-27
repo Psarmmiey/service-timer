@@ -90,6 +90,10 @@ describe("electron milestone 3 UI", () => {
     expect(await controlWindow.locator("aside").innerText()).toContain("Testimony");
     await stageWindow.waitForSelector(".stage-next:has-text('Next: Testimony (3 min)')");
 
+    await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
+    await controlWindow.getByRole("spinbutton", { name: "Amount" }).fill("2");
+    await controlWindow.getByRole("button", { name: "Add time", exact: true }).click();
+
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });
     await controlWindow.screenshot({ path: join(screenshotDir, "control-1366x720.png") });
@@ -104,6 +108,7 @@ describe("electron milestone 3 UI", () => {
     for (let index = 0; index < 2; index += 1) await controlWindow.keyboard.press("-");
     await stageWindow.waitForSelector(".stage-title:has-text('TIME UP')");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
+    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
   }, 30_000);
 
   it("keeps countdown digits large at supported stage resolutions", async () => {

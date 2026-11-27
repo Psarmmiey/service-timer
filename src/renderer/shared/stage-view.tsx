@@ -28,7 +28,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   const title = finished
     ? "Service ended"
     : overrun
-      ? `TIME UP · ${view.current?.title ?? "ITEM"}`
+      ? "TIME UP"
       : waiting
         ? `${state.plan.name} starts in`
         : view.current?.title ?? "Service";
@@ -37,7 +37,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       ? `First: ${firstRow.item.title} · ${formatClock(firstRow.scheduledStart)}`
       : ""
     : overrun
-      ? ""
+      ? view.current?.title ?? "ITEM"
       : view.next
       ? `Next: ${view.next.title} (${view.next.minutes} min)`
       : finished

@@ -87,9 +87,16 @@ input {
 }
 
 .stage-title[data-over="true"] {
-  letter-spacing: .1em;
+  top: 11cqh;
+  letter-spacing: .08em;
   color: #fee2e2;
   font-weight: 800;
+  font-size: clamp(32px, 11cqh, 120px);
+  line-height: 1;
+  max-width: 94cqw;
+  border: 0;
+  background: transparent;
+  text-shadow: 0 4px 18px rgb(80 0 0 / 60%);
 }
 
 .stage-digits {
@@ -109,7 +116,9 @@ input {
 }
 
 .stage-view[data-over="true"] .stage-digits {
-  transform: translateY(-47%) scaleX(.62);
+  top: 56%;
+  transform: translateY(-25%) scaleX(.62);
+  font-size: min(58cqh, 46cqw);
 }
 
 .stage-digits[data-warning="true"] {
