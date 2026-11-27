@@ -7,13 +7,23 @@ export type Settings = {
   openAtLogin: boolean;
   trayOnClose: boolean;
   keepAwake?: boolean;
+  automaticUpdates?: boolean;
+};
+
+export type UpdateStatus = {
+  state: "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+  version?: string;
+  message?: string;
+  portable?: boolean;
 };
 
 export type TimerCommand =
   | Command
   | { type: "savePlans"; plans: Plan[]; activePlanId: string }
   | { type: "saveSettings"; settings: Settings }
-  | { type: "identifyDisplays" };
+  | { type: "identifyDisplays" }
+  | { type: "checkForUpdates" }
+  | { type: "restartToUpdate" };
 
 export type DisplayStatus = {
   mode: "stage-window" | "single-monitor";
@@ -29,6 +39,7 @@ export type AppState = {
   plans: Plan[];
   activePlanId: string;
   settings: Settings;
+  update: UpdateStatus;
 };
 
 export type Api = {

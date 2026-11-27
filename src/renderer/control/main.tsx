@@ -668,6 +668,24 @@ function SettingsDialog({
             <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.keepAwake !== false} onCheckedChange={(keepAwake) => update({ keepAwake })} /> Keep the screen awake</label>
             <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.trayOnClose} onCheckedChange={(trayOnClose) => update({ trayOnClose })} /> Minimise to tray instead of closing</label>
           </section>
+          <section className="col-span-2 grid content-start gap-3 rounded-xl border border-zinc-200 p-4">
+            <h2 className="font-semibold">Updates</h2>
+            {state.update.portable ? (
+              <p className="text-sm text-zinc-600">
+                Portable builds cannot update automatically. Download and run the latest installer from GitHub Releases.
+              </p>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.automaticUpdates !== false} onCheckedChange={(automaticUpdates) => update({ automaticUpdates })} /> Automatic updates</label>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => send({ type: "checkForUpdates" })} disabled={state.update.state === "checking" || state.update.state === "downloading"}>Check for updates now</Button>
+                  {state.update.state === "ready" && <Button onClick={() => send({ type: "restartToUpdate" })}>Restart to update</Button>}
+                </div>
+                {state.update.state === "ready" && <p className="text-sm font-medium">Update ready: v{state.update.version}</p>}
+                {state.update.state === "error" && <p className="text-sm text-red-700">{state.update.message}</p>}
+              </>
+            )}
+          </section>
         </div>
       </DialogContent>
     </Dialog>
@@ -821,6 +839,12 @@ function ControlApp() {
           <div className="flex-1" />
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
           <div className="h-6 w-px bg-zinc-200" />
+          {state.update.state === "ready" && (
+            <button className="flex items-center gap-2 text-sm font-semibold" onClick={() => setSettingsOpen(true)}>
+              <span className="size-2 rounded-full bg-amber-500" />
+              Update ready: v{state.update.version}
+            </button>
+          )}
           <Tooltip label="Plans"><Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)}>Plans</Button></Tooltip>
           <Tooltip label="Settings"><Button aria-label="Settings" variant="ghost" size="icon" onClick={() => setSettingsOpen(true)}><Settings className="size-[18px]" /></Button></Tooltip>
         </header>

@@ -1,0 +1,42 @@
+appId: uk.rccgstirling.servicetimer
+productName: Service Timer
+copyright: Copyright (c) RCCG Stirling
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  artifactName: ServiceTimer-Setup-${version}.exe
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+portable:
+  artifactName: ServiceTimer-${version}-portable.exe
+mac:
+  icon: build/icon.icns
+  identity: "-"
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  identity: null
+publish:
+  provider: github
+  owner: Psarmmiey
+  repo: service-timer
