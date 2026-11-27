@@ -8,6 +8,7 @@ import {
   EyeOff,
   GripVertical,
   HelpCircle,
+  Smartphone,
   Pause,
   Play,
   Plus,
@@ -42,6 +43,7 @@ import {
   Tooltip,
   TooltipProvider,
 } from "../shared/ui";
+import { useChime } from "./chime";
 import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
 import { PlanEditorDialog } from "./plan-editor";
 import { SettingsDialog } from "./settings-dialog";
@@ -287,6 +289,7 @@ function ControlApp() {
   const autoWalkthroughShown = useRef(false);
   stateRef.current = state;
   const theme = useTheme(state?.settings.theme);
+  useChime(state);
 
   useEffect(() => window.api.onState(setState), []);
 
@@ -437,6 +440,9 @@ function ControlApp() {
             <Badge className={status.className}>{status.label}</Badge>
             {live ? <Badge className={behind ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" : ""}>{formatBehindAhead(view.behindAheadMs)}</Badge> : null}
             {view.blackout ? <Badge className="border-zinc-950 bg-zinc-950 text-zinc-50"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
+            {state.web.running && state.web.clients > 0 ? (
+              <Badge title="Phones connected to phone control"><Smartphone className="mr-1 size-3" /> {state.web.clients} phone{state.web.clients === 1 ? "" : "s"}</Badge>
+            ) : null}
           </div>
           <div className="flex-1" />
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
@@ -497,7 +503,7 @@ function ControlApp() {
                       {currentRow?.actualStart ? `Started ${formatClock(currentRow.actualStart)} · ` : ""}{view.current?.minutes} min planned
                     </span>
                     {overrun ? (
-                      <span className="mt-1 font-semibold text-red-700 dark:text-red-400">Over by {formatStageTime(view.timeLeftMs).replace("+", "")} · was due {formatClock(dueEnd)}</span>
+                      <span className="mt-1 font-semibold text-red-700 dark:text-red-400">Over by {formatStageTime(Math.max(1000, -view.timeLeftMs))} · was due {formatClock(dueEnd)}</span>
                     ) : (
                       <span className="mt-1 text-zinc-500">{view.paused ? "Paused" : `Ends at ${formatClock(dueEnd)}`}</span>
                     )}

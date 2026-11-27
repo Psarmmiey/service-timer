@@ -18,7 +18,7 @@ export const WALKTHROUGH_STEPS: Step[] = [
   { target: "message", title: "Message the speaker", body: "Send \"Please wrap up\" or your own words to the stage. Esc clears it." },
   { target: "blackout", title: "Blackout", body: "Turns the stage screen black, for example during a video. Press B or this button again to bring the timer back." },
   { target: "plans", title: "Plans", body: "Set up Sunday's running order, start time and auto-start. With auto-start on, the timer starts itself even if nobody is here." },
-  { target: "settings", title: "Settings and help", body: "Choose the stage screen, light or dark theme, and replay this walkthrough. That's it: you're ready." },
+  { target: "settings", title: "Settings and help", body: "Choose the stage screen, time up alerts, light or dark theme, and phone control, so someone can run the timer from their phone. You can replay this walkthrough here too. That's it: you're ready." },
 ];
 
 const CARD_WIDTH = 340;

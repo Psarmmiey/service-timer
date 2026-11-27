@@ -1,4 +1,4 @@
-import { HelpCircle, Monitor, Moon, Power, RefreshCw, Sun } from "lucide-react";
+import { Bell, HelpCircle, Monitor, Moon, Power, RefreshCw, Smartphone, Sun } from "lucide-react";
 import { useState } from "react";
 import type { AppState, Settings } from "../../shared/ipc";
 import {
@@ -16,12 +16,15 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../shared/ui";
+import { playChime } from "./chime";
 import { send } from "./common";
 
-type Section = "stage" | "appearance" | "startup" | "updates" | "help";
+type Section = "stage" | "alerts" | "phone" | "appearance" | "startup" | "updates" | "help";
 
 const SECTIONS: { id: Section; label: string; icon: typeof Monitor }[] = [
   { id: "stage", label: "Stage display", icon: Monitor },
+  { id: "alerts", label: "Time up and alerts", icon: Bell },
+  { id: "phone", label: "Phone control", icon: Smartphone },
   { id: "appearance", label: "Appearance", icon: Sun },
   { id: "startup", label: "Startup and power", icon: Power },
   { id: "updates", label: "Updates", icon: RefreshCw },
@@ -108,6 +111,11 @@ export function SettingsDialog({
               <Row title="Which screen is which?" hint="Shows a big number on every screen for a few seconds.">
                 <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
               </Row>
+            </>
+          ) : null}
+          {section === "alerts" ? (
+            <>
+              <h2 className="text-base font-semibold">Time up and alerts</h2>
               <Row title="At time up" hint="What the stage does when an item runs out of time.">
                 <ToggleGroup type="single" value={settings.timeUpStyle} onValueChange={(value) => value && update({ timeUpStyle: value as Settings["timeUpStyle"] })} className="flex gap-1">
                   <ToggleGroupItem value="whole-screen" className="h-9">Whole screen red</ToggleGroupItem>
@@ -117,6 +125,9 @@ export function SettingsDialog({
               <Row title="Pulse slowly at time up" hint="Turn off for anyone sensitive to flashing.">
                 <Switch aria-label="Pulse slowly at time up" checked={settings.pulse} onCheckedChange={(pulse) => update({ pulse })} />
               </Row>
+              <Row title="Flash at 0:00" hint="Three quick flashes when time runs out, then steady.">
+                <Switch aria-label="Flash at 0:00" checked={settings.flashAtZero !== false} onCheckedChange={(flashAtZero) => update({ flashAtZero })} />
+              </Row>
               <Row title="Turn amber when" hint="Items can override this in the plan editor.">
                 <Select value={String(settings.warnAtSeconds ?? 120)} onValueChange={(value) => update({ warnAtSeconds: Number(value) })}>
                   <SelectTrigger className="w-[180px]" aria-label="Turn amber when"><SelectValue /></SelectTrigger>
@@ -125,6 +136,67 @@ export function SettingsDialog({
                   </SelectContent>
                 </Select>
               </Row>
+              <Row title="Turn red when" hint="Red digits in the last seconds, before the whole screen goes red.">
+                <Select value={String(settings.dangerAtSeconds ?? 30)} onValueChange={(value) => update({ dangerAtSeconds: Number(value) })}>
+                  <SelectTrigger className="w-[180px]" aria-label="Turn red when"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Off</SelectItem>
+                    {[15, 30, 60].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 60 ? `${seconds} s left` : "1 min left"}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Row>
+              <Row title="Show overtime as" hint="Ontime and ProPresenter use a minus sign.">
+                <ToggleGroup type="single" value={settings.overtimeSign ?? "plus"} onValueChange={(value) => value && update({ overtimeSign: value as Settings["overtimeSign"] })} className="flex gap-1" aria-label="Show overtime as">
+                  <ToggleGroupItem value="plus" className="h-9 tabular-nums">+1:30</ToggleGroupItem>
+                  <ToggleGroupItem value="minus" className="h-9 tabular-nums">−1:30</ToggleGroupItem>
+                </ToggleGroup>
+              </Row>
+              <Row title="Chime on this laptop" hint="Only this laptop plays it, never the stage, so the room doesn't hear it.">
+                <div className="flex items-center gap-2">
+                  <Select value={settings.chime ?? "time-up"} onValueChange={(value) => update({ chime: value as Settings["chime"] })}>
+                    <SelectTrigger className="w-[200px]" aria-label="Chime on this laptop"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off</SelectItem>
+                      <SelectItem value="time-up">At time up</SelectItem>
+                      <SelectItem value="warning-and-time-up">At amber and time up</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={() => playChime("time-up")}>Test</Button>
+                </div>
+              </Row>
+            </>
+          ) : null}
+          {section === "phone" ? (
+            <>
+              <h2 className="text-base font-semibold">Phone control</h2>
+              <Row title="Let phones control the timer" hint="Phones on the same Wi-Fi can use Next, Pause, ±1 min, messages and blackout. They can't change plans or settings.">
+                <Switch aria-label="Let phones control the timer" checked={Boolean(settings.phoneControl)} onCheckedChange={(phoneControl) => update({ phoneControl })} />
+              </Row>
+              {settings.phoneControl ? (
+                state.web.running ? (
+                  <div className="mt-3 flex gap-5">
+                    {state.web.qrSvg ? (
+                      <div className="size-[164px] shrink-0 rounded-lg bg-[#fff] p-2" aria-label="QR code to open phone control" dangerouslySetInnerHTML={{ __html: state.web.qrSvg }} />
+                    ) : null}
+                    <div className="min-w-0 text-sm">
+                      <div className="text-zinc-500">1. Join the church Wi-Fi, then scan the code or open:</div>
+                      {state.web.urls.map((url) => <div key={url} className="mt-1 font-mono text-base font-semibold">{url}</div>)}
+                      <div className="mt-3 text-zinc-500">2. Enter this PIN:</div>
+                      <div className="mt-1 font-mono text-3xl font-bold tracking-[0.3em]" aria-label="Phone PIN">{state.web.pin}</div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <Button onClick={() => send({ type: "newPhonePin" })}>New PIN</Button>
+                        <span className="text-xs text-zinc-500">
+                          {state.web.clients === 0 ? "No phones connected." : `${state.web.clients} phone${state.web.clients === 1 ? "" : "s"} connected.`} A new PIN signs every phone out.
+                        </span>
+                      </div>
+                      {state.web.error ? <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">{state.web.error}</p> : null}
+                      <p className="mt-3 text-xs text-zinc-500">If Windows asks whether Service Timer may use the network, choose Allow on private networks.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">{state.web.error ?? "Starting phone control…"}</p>
+                )
+              ) : null}
             </>
           ) : null}
           {section === "appearance" ? (
