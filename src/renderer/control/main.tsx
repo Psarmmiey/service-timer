@@ -45,7 +45,7 @@ import {
 } from "../shared/ui";
 import { useChime } from "./chime";
 import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
-import { PlanEditorDialog } from "./plan-editor";
+import { PlanEditorDialog, type PlanRequest } from "./plan-editor";
 import { SettingsDialog, type Section as SettingsSection } from "./settings-dialog";
 import { useTheme } from "./theme";
 import { Walkthrough } from "./walkthrough";
@@ -131,6 +131,40 @@ function StartNowDialog({ target, onClose }: { target: StartNowTarget | null; on
             Start now
           </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [
+  ["Space", "Start, pause or resume"],
+  ["→ or N", "Next item"],
+  ["← or P", "Previous item"],
+  ["+ / −", "Add or take off a minute"],
+  ["M", "Type a message to the stage"],
+  ["Esc", "Clear the message"],
+  ["B", "Blackout the stage, or bring it back"],
+  ["?", "Show the walkthrough"],
+  [navigator.userAgent.includes("Mac") ? "⌘E" : "Ctrl+E", "Plans"],
+  [navigator.userAgent.includes("Mac") ? "⌘⇧V" : "Ctrl+Shift+V", "Paste a running order"],
+  [navigator.userAgent.includes("Mac") ? "⌘," : "Ctrl+,", "Settings"],
+];
+
+function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>Keyboard shortcuts</DialogTitle>
+        <DialogDescription>They work whenever you are not typing in a box.</DialogDescription>
+        <dl className="mt-4 grid grid-cols-[110px_1fr] gap-x-4 gap-y-2 text-sm">
+          {SHORTCUTS.map(([keys, what]) => (
+            <div key={keys} className="contents">
+              <dt><kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-mono text-xs">{keys}</kbd></dt>
+              <dd>{what}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-6 flex justify-end"><Button onClick={() => onOpenChange(false)}>Close</Button></div>
       </DialogContent>
     </Dialog>
   );
@@ -370,6 +404,28 @@ function ControlApp() {
     else send({ type: "pause" });
   };
   const toggleRef = useRef(toggleFor);
+
+  // Menu bar items (File, Timer, Help) arrive here so they can open this window's dialogs.
+  const [planRequest, setPlanRequest] = useState<PlanRequest | undefined>(undefined);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  useEffect(() => window.api.onMenu((action, file) => {
+    const latest = stateRef.current;
+    switch (action) {
+      case "plans": setPlansOpen(true); break;
+      case "pastePlan": setPlansOpen(true); setPlanRequest({ kind: "paste", at: Date.now() }); break;
+      case "backupPlans": setPlansOpen(true); setPlanRequest({ kind: "backup", at: Date.now() }); break;
+      case "importFile": if (file) { setPlansOpen(true); setPlanRequest({ kind: "file", at: Date.now(), file }); } break;
+      case "settings": openSettings(); break;
+      case "phone": openSettings("phone"); break;
+      case "walkthrough": setWalkthroughOpen(true); break;
+      case "shortcuts": setShortcutsOpen(true); break;
+      case "toggle": if (latest) toggleRef.current(latest); break;
+      case "message": messageRef.current?.focus(); break;
+      case "restart": setConfirm("restart"); break;
+      case "stop": setConfirm("stop"); break;
+      default: break;
+    }
+  }), []);
   toggleRef.current = toggleFor;
 
   const showMessage = (text: string) => {
@@ -773,7 +829,8 @@ function ControlApp() {
       <StartDialog state={state} open={startDialog !== null} mode={startDialog ?? "late"} onOpenChange={(open) => !open && setStartDialog(null)} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
-      <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} />
+      <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} request={planRequest} />
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} startSection={settingsSection} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
       <Walkthrough open={walkthroughOpen} onClose={closeWalkthrough} />
       <Toaster theme={theme} />

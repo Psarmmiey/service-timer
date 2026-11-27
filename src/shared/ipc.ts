@@ -104,7 +104,27 @@ export type AppState = {
   web: WebControlStatus;
 };
 
+/** Menu bar items the control window carries out, because they open its dialogs or need its prompts. */
+export type MenuAction =
+  | "plans"
+  | "pastePlan"
+  | "importPlans"
+  | "backupPlans"
+  | "settings"
+  | "phone"
+  | "walkthrough"
+  | "shortcuts"
+  | "toggle"
+  | "message"
+  | "restart"
+  | "stop"
+  /** Main process opened a file chosen from File > Import; the text comes with it. */
+  | "importFile";
+
+export type MenuFile = { name: string; text: string };
+
 export type Api = {
   send: (command: TimerCommand) => void;
   onState: (callback: (state: AppState) => void) => () => void;
+  onMenu: (callback: (action: MenuAction, file?: MenuFile) => void) => () => void;
 };

@@ -454,3 +454,11 @@ Import also takes a `.csv` with an Item column and either Minutes or Start and E
 ### Fix: Set as active plan shows the plan straight away (27 Nov 2026)
 
 Picking a plan with "Set as active plan" while nothing is running now shows it on the schedule at once, including after a service has ended (before, the finished plan stayed and the choice seemed to do nothing), and it beats the automatic choice of today's plan until tomorrow. A picked plan never starts by surprise: it waits to start automatically only if it is scheduled later today; otherwise it sits ready for Start.
+
+### Decision: logo, menu bar and installer (27 Nov 2026)
+
+Logo: a white stopwatch on the app's dark rounded square, with a red wedge for time running down, matching the app's black, white and red. Sources are `build/icon.svg` and `build/tray-template.svg`; `npm run icons` renders the Windows `.ico` (16 to 256 px), the Mac `.icns`, the Windows tray `.ico` and the Mac menu bar template images. The old SVG tray icon is gone (Windows can't show SVG in the tray).
+
+Menu bar: File (Plans, Paste Running Order, Import, Back Up All Plans), Edit, Timer (Start/Pause/Resume, Next, Previous, ±1 minute, message, Blackout, Restart, Stop), View (stage screen, Which Screen Is Which, theme, zoom, full screen) and Help (walkthrough, shortcuts, phone control, guide, report a problem, updates, About); a Mac gets its usual app and Window menus. Only Ctrl/⌘ shortcuts are registered with the menu; single keys are shown in labels and handled by the window, so they never fire while typing. Release builds never show Reload or developer tools. On Windows the menu bar stays visible on the control window (the layout still fits a 1366x768 laptop); the stage never has one.
+
+Installer: one-click, per user, no administrator; logo on the installer and uninstaller; Start menu and desktop shortcuts; opens when done; plans and settings are kept on uninstall.

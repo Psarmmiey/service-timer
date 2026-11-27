@@ -21,7 +21,9 @@ The installer is unsigned, so Windows SmartScreen may show a warning:
 1. Select **More info**.
 2. Select **Run anyway**.
 
-The installer is per-user and does not need an administrator account. It adds a Start menu shortcut and, if selected, a desktop shortcut.
+The installer is per-user and does not need an administrator account. It installs in a few seconds, adds Start menu and desktop shortcuts, and opens Service Timer. Plans and settings are kept if Service Timer is uninstalled and installed again.
+
+The first time phone control is switched on, Windows may ask whether Service Timer can use the network. Choose **Allow** on private networks.
 
 ### Portable build
 
@@ -32,8 +34,8 @@ Download `ServiceTimer-<version>-portable.exe` if no installation is wanted. It 
 The Mac build is for Apple Silicon and is ad-hoc signed. Download the latest `.dmg` or `.zip` from GitHub Releases.
 
 1. Open the `.dmg`, then drag **Service Timer** into Applications.
-2. The first time, right-click **Service Timer** in Applications and select **Open**.
-3. Select **Open** in the security prompt.
+2. Open **Service Timer**. macOS says it can't check the app for malicious software.
+3. Open **System Settings**, then **Privacy & Security**, scroll down and select **Open Anyway** next to Service Timer, then confirm.
 
 Alternatively, remove the downloaded-app quarantine attribute:
 
@@ -42,6 +44,17 @@ xattr -cr "/Applications/Service Timer.app"
 ```
 
 Unsigned Mac builds do not support OTA updates. Reinstall the newer `.dmg` or `.zip` by hand.
+
+## Menu bar
+
+On Windows the menu bar is at the top of the window; on a Mac it is at the top of the screen.
+
+- **File**: Plans, Paste Running Order, Import Plan or CSV, Back Up All Plans, Settings.
+- **Timer**: Start, Pause or Resume, Next and Previous item, add or take off a minute, message to the stage, Blackout, Restart item, Stop.
+- **View**: which screen shows the timer, Which Screen Is Which, theme, text size, full screen.
+- **Help**: the walkthrough, keyboard shortcuts, phone control, this guide, report a problem, updates, About.
+
+Single-key shortcuts (Space, arrows, B, M) are shown in the menu but only work when you are not typing in a box.
 
 ## Use at Sunday setup
 
@@ -76,6 +89,16 @@ If an update fails, Service Timer keeps running the installed version and shows 
 - [ ] Stage display connected and recognised
 - [ ] Laptop plugged into mains power
 - [ ] Test plan and start time checked
+
+## Making a release
+
+1. Make sure `main` has everything to ship and its CI is green.
+2. Set the version in `package.json` (for example `1.0.0`), commit, then tag and push: `git tag v1.0.0 && git push origin v1.0.0`.
+3. The Release workflow builds the Windows installer and portable `.exe` and the Mac `.dmg`, and attaches them to a GitHub Release for that tag. Installed Windows copies update themselves from it.
+
+Every push to `main` also builds the installers as downloadable workflow artifacts, without making a release.
+
+The logo lives in `build/icon.svg` (and `build/tray-template.svg` for the Mac menu bar). After changing either, run `npm run icons` on a Mac to regenerate every icon size.
 
 ## Docs
 
