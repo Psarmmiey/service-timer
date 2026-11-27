@@ -61,6 +61,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
     <div
       className={`stage-view ${className}`}
       data-over={overrun}
+      data-message={Boolean(view.message)}
       data-time-up-style={state.settings.timeUpStyle}
       data-pulse={state.settings.pulse}
       aria-label={preview ? "Stage preview" : "Stage display"}
@@ -77,7 +78,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
       </div>
       {next ? <div className="stage-next">{next}</div> : null}
       {view.message ? (
-        <div className="stage-message" data-flash={view.message.flash}>{view.message.text}</div>
+        <div className="stage-message" data-flash={view.message.flash} data-long={view.message.text.length > 60}>{view.message.text}</div>
       ) : null}
     </div>
   );
