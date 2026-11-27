@@ -21,7 +21,7 @@ export function StageView({ state, className = "", preview = false }: StageViewP
   const waiting = view.status === "waiting" || view.status === "idle";
   const finished = view.status === "finished";
   const firstRow = view.scheduleRows[0];
-  const waitingMs = firstRow ? Math.max(0, firstRow.scheduledStart - state.now) : 0;
+  const waitingMs = firstRow ? Math.max(1, firstRow.scheduledStart - state.now) : 1;
   const digits = finished
     ? "—"
     : formatStageTime(waiting ? waitingMs : view.timeLeftMs);
