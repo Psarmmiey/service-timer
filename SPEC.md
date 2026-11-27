@@ -419,3 +419,6 @@ service-timer/
 - **Repository:** `Psarmmiey/service-timer`, public, so electron-updater can read GitHub Releases without a token (EXE-12).
 - **Colours:** time up red `#D00000`, amber digits from 2:00 left, white on near-black otherwise. Where a mockup differs, this spec wins.
 - **Separate from Hallel:** Service Timer is its own app and repo. It must not depend on Hallel being installed or open.
+- **Next is the primary action (27 Nov 2026):** Next item is the dominant dark button on the control window; Pause is a large secondary button beside it. This replaces the mockup's Pause-first layout.
+- **Dark theme (27 Nov 2026):** the control window has System, Light and Dark themes (Settings, Appearance). The stage is always dark.
+- **Walkthrough (27 Nov 2026):** a short guided tour of the control window opens on first run (never during a service) and can be replayed from the ? button, the ? key or Settings, Help.
