@@ -100,6 +100,11 @@ describe("phone control", () => {
     expect((await post("/api/command", { type: "doNext", index: 5 })).status).toBe(204);
     await control.locator('[aria-label="Stage preview"] .stage-next:has-text("Closing prayer")').waitFor({ timeout: 5_000 });
     await control.getByRole("button", { name: "Save to plan" }).waitFor();
+    // Order is now Welcome, Worship (now), Closing, Announcements, Offering, Sermon.
+    // Start now goes straight to Sermon; the ones it jumps over stay in the order.
+    expect((await post("/api/command", { type: "startNow", index: 5 })).status).toBe(204);
+    await control.locator('[aria-label="Stage preview"]:has-text("Sermon")').waitFor({ timeout: 5_000 });
+    expect(await schedule()).toContain("Offering");
   });
 
   it("never lets a phone change plans or settings", async () => {

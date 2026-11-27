@@ -432,3 +432,7 @@ Item names on the stage (current item, Next, First) show in capitals by default 
 ### Decision: running order on the phone (27 Nov 2026)
 
 The phone page has a second tab, Running order, showing today's items with times and Now/Done/Skipped. While the service is running, upcoming items can be moved up or down, made next, given more or fewer minutes, or removed, and a new item can be added after the current one. Every change is for today only, with a 10 second Undo, as on the laptop. Phones still cannot change saved plans or settings; to keep a change, someone presses Save to plan on the laptop. Save to plan only shows when today's order really differs from the plan (an undone change does not count).
+
+### Decision: Do next versus Start now (27 Nov 2026)
+
+Do next queues an item straight after the current one; the current item carries on. Start now goes to the item straight away: the current item ends, the chosen item starts with its full time, and the items it jumped over stay in the order for later (they are not marked skipped). Because Start now changes the stage at once, the laptop asks for confirmation and the phone needs a second tap within 4 seconds. There is no Undo for Start now; Previous goes back if it was a mistake.

@@ -135,6 +135,7 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "moveUp":
     case "moveDown":
     case "doNext":
+    case "startNow":
     case "removeUpcoming":
       return isInteger(value.index);
     case "setRunItemMinutes":

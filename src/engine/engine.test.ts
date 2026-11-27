@@ -428,6 +428,20 @@ describe("run-only edits from the running order (phone or laptop)", () => {
     expect(derive(state, referencePlan, at("09:55:05")).hasRunChanges).toBe(false);
   });
 
+  it("starts an upcoming item straight away and keeps the skipped-over items", () => {
+    const state = reduce(live(), { type: "startNow", index: 4 }, at("09:55"), referencePlan);
+    const view = derive(state, referencePlan, at("09:55"));
+    expect(view.current?.id).toBe("sermon");
+    expect(view.timeLeftMs).toBe(40 * 60_000);
+    expect(state.runItems?.map((item) => item.id)).toEqual(["welcome", "worship", "sermon", "announcements", "offering", "closing"]);
+    expect(view.scheduleRows.find((row) => row.item.id === "worship")?.status).toBe("done");
+    expect(view.scheduleRows.find((row) => row.item.id === "announcements")?.status).toBe("upcoming");
+    expect(state.skipped).toEqual(live().skipped); // nothing newly skipped
+    // The item running now and finished items cannot be "started now".
+    expect(reduce(live(), { type: "startNow", index: 1 }, at("09:55"), referencePlan)).toEqual(live());
+    expect(reduce(live(), { type: "startNow", index: 0 }, at("09:55"), referencePlan)).toEqual(live());
+  });
+
   it("removes an upcoming item for today only, with undo", () => {
     let state = reduce(live(), { type: "removeUpcoming", index: 3 }, at("09:55"), referencePlan);
     expect(state.runItems?.map((item) => item.id)).not.toContain("offering");

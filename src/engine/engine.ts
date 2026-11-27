@@ -17,6 +17,8 @@ export type Command =
   | { type: "moveUp"; index: number }
   | { type: "moveDown"; index: number }
   | { type: "doNext"; index: number }
+  /** Go straight to an upcoming item: the current item ends now and the items in between stay in the order. */
+  | { type: "startNow"; index: number }
   | { type: "setRunItemMinutes"; index: number; minutes: number }
   | { type: "removeUpcoming"; index: number }
   | { type: "undoReorder" }
@@ -284,6 +286,19 @@ export function reduce(state: RunState, command: Command, now: number, plan?: Pl
     if (!moved) return state;
     items.splice(toIndex, 0, moved);
     return { ...state, runItems: items, undoReorder: { items: currentItems, expiresAt: now + 10_000 } };
+  }
+
+  if (command.type === "startNow") {
+    if (!plan || !isLive(state)) return state;
+    const before = itemsFor(state, plan);
+    const current = locateCurrent(state, before);
+    if (command.index <= current || command.index >= before.length) return state;
+    const items = [...before];
+    const [moved] = items.splice(command.index, 1);
+    items.splice(current + 1, 0, moved!);
+    const changed = command.index === current + 1 ? state : { ...state, runItems: items };
+    // Time has moved on, so there is nothing sensible to undo; Previous goes back if it was a mistake.
+    return startItem({ ...changed, undoReorder: undefined }, plan, current + 1, now, "item");
   }
 
   if (command.type === "setRunItemMinutes" || command.type === "removeUpcoming") {

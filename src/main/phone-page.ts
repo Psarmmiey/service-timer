@@ -89,8 +89,9 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   .row .name small { color:var(--muted); font-size:13px; }
   .row .tag { flex:none; font-size:12px; font-weight:700; border-radius:999px; padding:3px 9px; background:#27272a; color:#d4d4d8; }
   .row .tag.now { background:var(--text); color:var(--bg); } .row .tag.over { background:#450a0a; color:#fca5a5; }
-  .row .acts { display:grid; grid-template-columns:44px 44px minmax(0,1fr) minmax(0,1fr); gap:6px; margin-top:8px; }
-  .row .acts button { min-height:42px; font-size:15px; padding:0 8px; }
+  .row .acts { display:grid; grid-template-columns:44px 44px minmax(0,1fr) minmax(0,1fr) 44px; gap:6px; margin-top:8px; }
+  .row .acts button { min-height:42px; font-size:14px; padding:0 4px; white-space:nowrap; }
+  .row .acts button.confirming { background:var(--text); color:var(--bg); border-color:var(--text); }
   .editor { margin-top:8px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
   .editor .row2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
   .editor .row2 button { padding:0 8px; font-size:15px; }
@@ -192,7 +193,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 (function () {
   var PRESETS = ["Please wrap up", "5 minutes", "2 minutes", "Time for altar call"];
   var state = null, source = null, lastStatus = null, lastItem = null;
-  var tab = localStorage.getItem("st-tab") || "timer", editing = -1, editMinutes = 0, rowsKey = "";
+  var tab = localStorage.getItem("st-tab") || "timer", editing = -1, editMinutes = 0, rowsKey = "", confirming = -1, confirmTimer = 0;
   var $ = function (id) { return document.getElementById(id); };
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -315,7 +316,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     $("add-form").classList.toggle("hidden", !s.live);
     $("order-finish").textContent = "Planned finish " + clock(s.plannedFinish) + " · projected " + clock(s.projectedFinish);
 
-    var key = JSON.stringify([s.live, s.status, editing, editMinutes, s.rows.map(function (r) { return [r.title, r.minutes, r.status, r.skipped, r.actualStart, r.scheduledStart]; })]);
+    var key = JSON.stringify([s.live, s.status, editing, editMinutes, confirming, s.rows.map(function (r) { return [r.title, r.minutes, r.status, r.skipped, r.actualStart, r.scheduledStart]; })]);
     if (key === rowsKey) return;
     rowsKey = key;
     var list = $("rows"); list.innerHTML = "";
@@ -334,10 +335,22 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
         var acts = el("div", "acts");
         acts.appendChild(btn("↑", function () { command({ type: "moveUp", index: r.index }); }, "", "Move " + r.title + " up"));
         acts.appendChild(btn("↓", function () { command({ type: "moveDown", index: r.index }); }, "", "Move " + r.title + " down"));
-        acts.appendChild(btn("Do next", function () { command({ type: "doNext", index: r.index }, r.title + " is next"); }));
-        acts.appendChild(btn(editing === r.index ? "Close" : "Edit", function () {
+        acts.appendChild(btn("Do next", function () { command({ type: "doNext", index: r.index }, r.title + " is next"); }, "", "Do " + r.title + " next"));
+        // Start now jumps the stage straight away, so it takes a second tap to confirm.
+        var start = btn(confirming === r.index ? "Tap again" : "Start now", function () {
+          if (confirming === r.index) {
+            confirming = -1; clearTimeout(confirmTimer);
+            command({ type: "startNow", index: r.index }, r.title + " started");
+            return;
+          }
+          confirming = r.index; rowsKey = ""; renderOrder(state);
+          clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirming = -1; rowsKey = ""; if (state) renderOrder(state); }, 4000);
+        }, confirming === r.index ? "confirming" : "", "Start " + r.title + " now");
+        acts.appendChild(start);
+        acts.appendChild(btn(editing === r.index ? "×" : "✎", function () {
           editing = editing === r.index ? -1 : r.index; editMinutes = r.minutes; rowsKey = ""; renderOrder(state);
-        }));
+        }, "", (editing === r.index ? "Close editing " : "Edit ") + r.title));
         row.appendChild(acts);
         if (editing === r.index) {
           var ed = el("div", "editor");

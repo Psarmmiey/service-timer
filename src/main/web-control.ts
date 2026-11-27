@@ -25,6 +25,7 @@ export const PHONE_COMMANDS = new Set([
   "moveUp",
   "moveDown",
   "doNext",
+  "startNow",
   "insertAfterCurrent",
   "setRunItemMinutes",
   "removeUpcoming",

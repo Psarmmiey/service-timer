@@ -107,6 +107,35 @@ function ConfirmDialog({ action, onClose }: { action: "restart" | "stop" | null;
   );
 }
 
+type StartNowTarget = { index: number; title: string; minutes: number; ending?: string; between: string[] };
+
+function StartNowDialog({ target, onClose }: { target: StartNowTarget | null; onClose: () => void }) {
+  const between = target?.between ?? [];
+  return (
+    <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogTitle>Start {target?.title} now?</DialogTitle>
+        <DialogDescription>
+          {target?.ending ? `${target.ending} ends now and ` : ""}{target?.title} starts with its full {target?.minutes} min.
+          {between.length ? ` ${between.join(", ")} ${between.length === 1 ? "stays" : "stay"} in the order for later.` : ""}
+        </DialogDescription>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="default"
+            onClick={() => {
+              if (target) send({ type: "startNow", index: target.index });
+              onClose();
+            }}
+          >
+            Start now
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CustomAdjustDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [minutes, setMinutes] = useState("1");
   const amount = Math.max(0, Math.round((Number(minutes) || 0) * MINUTE_MS));
@@ -276,6 +305,7 @@ const STATUS_STYLE: Record<string, { label: string; className: string }> = {
 function ControlApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [confirm, setConfirm] = useState<"restart" | "stop" | null>(null);
+  const [startNowTarget, setStartNowTarget] = useState<StartNowTarget | null>(null);
   const [startDialog, setStartDialog] = useState<"late" | "choose" | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
@@ -679,6 +709,13 @@ function ControlApp() {
                         <Tooltip label="Move up"><Button aria-label={`Move ${row.item.title} up`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveUp", index: row.index }, "Item moved up")}><ArrowUp className="size-4" /></Button></Tooltip>
                         <Tooltip label="Move down"><Button aria-label={`Move ${row.item.title} down`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveDown", index: row.index }, "Item moved down")}><ArrowDown className="size-4" /></Button></Tooltip>
                         <Button aria-label={`Do ${row.item.title} next`} size="sm" className="h-8 px-2" onClick={() => reorder({ type: "doNext", index: row.index }, `${row.item.title} is next`)}>Do next</Button>
+                        <Tooltip label="Start now"><Button aria-label={`Start ${row.item.title} now`} variant="ghost" size="icon" className="size-8" onClick={() => setStartNowTarget({
+                          index: row.index,
+                          title: row.item.title,
+                          minutes: row.item.minutes,
+                          ending: view.current?.title,
+                          between: view.scheduleRows.filter((other) => other.status === "upcoming" && other.index < row.index).map((other) => other.item.title),
+                        })}><Play className="size-4" /></Button></Tooltip>
                       </span>
                     ) : (
                       <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
@@ -698,6 +735,7 @@ function ControlApp() {
       </main>
 
       <ConfirmDialog action={confirm} onClose={() => setConfirm(null)} />
+      <StartNowDialog target={startNowTarget} onClose={() => setStartNowTarget(null)} />
       <StartDialog state={state} open={startDialog !== null} mode={startDialog ?? "late"} onOpenChange={(open) => !open && setStartDialog(null)} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
