@@ -93,7 +93,8 @@ describe("electron milestone 3 UI", () => {
     await controlWindow.getByRole("textbox", { name: "Title" }).fill("Testimony");
     await controlWindow.getByRole("spinbutton", { name: "Minutes" }).fill("3");
     await controlWindow.getByRole("button", { name: "Add item", exact: true }).click();
-    expect(await controlWindow.locator("aside").innerText()).toContain("Testimony");
+    // The schedule updates on the next state broadcast, so wait rather than read straight away.
+    await controlWindow.locator("aside").getByText("Testimony").first().waitFor({ timeout: 5_000 });
     await stageWindow.waitForSelector(".stage-next:has-text('Next: Testimony (3 min)')");
 
     await controlWindow.getByRole("button", { name: "Custom ± time" }).click();
