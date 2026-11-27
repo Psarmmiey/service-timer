@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, Tray } from "electron";
 import { join } from "node:path";
-import { createIdleState, createWaitingState, derive, reduce, type Item, type Plan, type RunState } from "../engine";
-import { chooseTodaysPlan, localDateString } from "../engine/schedule";
+import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
+import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
 import type { AppState, DisplayStatus, Settings, TimerCommand } from "../shared/ipc";
@@ -54,6 +54,7 @@ function isItem(value: unknown): value is Item {
   return typeof value.id === "string"
     && typeof value.title === "string"
     && isFiniteNumber(value.minutes)
+    && value.minutes >= 0.5
     && (value.note === undefined || typeof value.note === "string")
     && (value.warnAtSeconds === undefined || isFiniteNumber(value.warnAtSeconds));
 }
@@ -63,8 +64,9 @@ function isPlan(value: unknown): value is Plan {
   return typeof value.id === "string"
     && typeof value.name === "string"
     && typeof value.startTime === "string"
+    && /^([01]\d|2[0-3]):[0-5]\d$/.test(value.startTime)
     && Array.isArray(value.days)
-    && value.days.every(isInteger)
+    && value.days.every((day) => isInteger(day) && day >= 0 && day <= 6)
     && typeof value.autoStart === "boolean"
     && (value.autoAdvanceSeconds === undefined || isFiniteNumber(value.autoAdvanceSeconds))
     && Array.isArray(value.items)
@@ -86,6 +88,7 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "stop":
     case "undoReorder":
     case "clearMessage":
+    case "dismissBanner":
       return true;
     case "savePlans":
       return Array.isArray(value.plans) && value.plans.every(isPlan)
@@ -197,15 +200,32 @@ function broadcastState(now = Date.now()): void {
 }
 
 function persistRunState(): void {
-  store?.write("run-state.json", state);
+  try {
+    store?.write("run-state.json", state);
+  } catch (error) {
+    console.error("Could not save run state", error);
+  }
+}
+
+/**
+ * Pick today's plan and arm it. Only a plan that applies today (one-off date or matching
+ * recurring day) can auto-start; on other days the timer stays idle (FR-18).
+ */
+function armForToday(now = Date.now()): void {
+  const date = new Date(now);
+  const today = localDateString(date);
+  const todays = chooseTodaysPlan(plans, date, activePlanId);
+  currentPlan = todays ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
+  state = todays?.autoStart
+    ? reduce(createWaitingState(todays, today), { type: "tick" }, now, todays)
+    : createIdleState(currentPlan, today);
 }
 
 function updatePowerBlocker(): void {
-  const active = settings.keepAwake !== false && (
-    state.status === "running"
-    || state.status === "paused"
-    || state.status === "waiting"
-  );
+  const now = Date.now();
+  const startSoon = state.status === "waiting"
+    && planStartMs(currentPlan, state.runDate) + state.shiftMs - now <= 30 * 60_000;
+  const active = settings.keepAwake !== false && (isLive(state) || startSoon);
   if (active && powerBlockerId === null) {
     powerBlockerId = powerSaveBlocker.start("prevent-display-sleep");
   } else if (!active && powerBlockerId !== null) {
@@ -217,6 +237,7 @@ function updatePowerBlocker(): void {
 function focusControlWindow(): void {
   if (!controlWindow) return;
   if (controlWindow.isMinimized()) controlWindow.restore();
+  if (!controlWindow.isVisible()) controlWindow.show();
   controlWindow.focus();
 }
 
@@ -238,6 +259,7 @@ function applyStageWindowMode(targetWindow: BrowserWindow): void {
     return;
   }
 
+  if (process.platform !== "darwin" && targetWindow.isFullScreen()) targetWindow.setFullScreen(false);
   targetWindow.setBounds(placement.bounds);
   targetWindow.setAlwaysOnTop(true, "screen-saver");
 
@@ -288,6 +310,8 @@ function createControlWindow(): BrowserWindow {
 
   window.on("closed", () => {
     controlWindow = null;
+    // Closing the control window always closes the stage window too (EXE-9).
+    if (process.env.NODE_ENV !== "test") app.quit();
   });
 
   window.on("close", (event) => {
@@ -328,7 +352,6 @@ function createStageWindow(): BrowserWindow {
   const window = new BrowserWindow({
     show: false,
     frame: false,
-    fullscreen: true,
     skipTaskbar: true,
     autoHideMenuBar: true,
     webPreferences: {
@@ -360,10 +383,21 @@ function createStageWindow(): BrowserWindow {
 function startTickLoop(): void {
   if (tickTimer) clearInterval(tickTimer);
   tickTimer = setInterval(() => {
-    const now = Date.now();
-    state = reduce(state, { type: "tick" }, now, currentPlan);
-    updatePowerBlocker();
-    broadcastState(now);
+    try {
+      const now = Date.now();
+      // A new day: re-pick and re-arm today's plan unless a run is still going (FR-18).
+      if (state.runDate !== localDateString(new Date(now)) && !isLive(state)) {
+        armForToday(now);
+        persistRunState();
+      }
+      const before = state.status;
+      state = reduce(state, { type: "tick" }, now, currentPlan);
+      if (state.status !== before) persistRunState();
+      updatePowerBlocker();
+      broadcastState(now);
+    } catch (error) {
+      console.error("Tick failed", error);
+    }
   }, TICK_MS);
 }
 
@@ -405,11 +439,23 @@ function registerIpc(): void {
       if (payload.type === "identifyDisplays") {
         identifyDisplays();
       } else if (payload.type === "savePlans") {
+        if (!payload.plans.length) return;
         plans = payload.plans;
-        activePlanId = payload.activePlanId;
-        currentPlan = plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
+        activePlanId = plans.some((plan) => plan.id === payload.activePlanId) ? payload.activePlanId : plans[0]!.id;
         store?.write("plans.json", { plans, activePlanId });
-        state = reduce(state, { type: "editPlan", plan: currentPlan }, now, currentPlan);
+        if (isLive(state)) {
+          // A live run keeps its own plan; edits to that plan apply live (FR-13).
+          const running = plans.find((plan) => plan.id === state.planId);
+          if (running) {
+            const previous = currentPlan;
+            currentPlan = running;
+            state = reduce(state, { type: "editPlan", plan: running }, now, previous);
+          }
+        } else if (state.status === "finished") {
+          currentPlan = plans.find((plan) => plan.id === state.planId) ?? currentPlan;
+        } else {
+          armForToday(now);
+        }
       } else if (payload.type === "saveSettings") {
         settings = payload.settings;
         app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
@@ -457,38 +503,37 @@ function createTray(): void {
 
 function loadPersistentData(): void {
   store = createJsonStore(app.getPath("userData"));
-  const planFile = store.read<{ plans?: Plan[]; activePlanId?: string }>("plans.json", {});
-  if (planFile.plans?.length) plans = planFile.plans;
-  activePlanId = planFile.activePlanId && plans.some((plan) => plan.id === planFile.activePlanId)
+  const planFile = store.read<{ plans?: unknown; activePlanId?: unknown } | null>("plans.json", null);
+  const savedPlans = Array.isArray(planFile?.plans) ? planFile.plans.filter(isPlan) : [];
+  if (planFile && Array.isArray(planFile.plans) && savedPlans.length !== planFile.plans.length) {
+    console.error(`Ignored ${planFile.plans.length - savedPlans.length} invalid plan(s) in plans.json`);
+  }
+  if (savedPlans.length) plans = savedPlans;
+  activePlanId = typeof planFile?.activePlanId === "string" && plans.some((plan) => plan.id === planFile.activePlanId)
     ? planFile.activePlanId
     : plans[0]!.id;
-  currentPlan = chooseTodaysPlan(plans, new Date(), activePlanId) ?? plans.find((plan) => plan.id === activePlanId) ?? plans[0] ?? defaultPlan;
 
-  settings = { ...settings, ...store.read<Partial<Settings>>("settings.json", {}) };
+  const savedSettings = store.read<Partial<Settings> | null>("settings.json", null);
+  const merged = { ...settings, ...(savedSettings ?? {}) };
+  if (isSettings(merged)) settings = merged;
   app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
 
+  const now = Date.now();
   const saved = store.read<RunState | null>("run-state.json", null);
-  const today = localDateString(new Date());
-  if (process.env.NODE_ENV !== "test" && saved?.runDate === today && ["running", "paused"].includes(saved.status)) {
-    state = { ...saved, banner: "Recovered: this run resumed from the clock." };
+  const savedPlan = saved ? plans.find((plan) => plan.id === saved.planId) : undefined;
+  if (
+    process.env.NODE_ENV !== "test"
+    && saved && savedPlan
+    && saved.runDate === localDateString(new Date(now))
+    && (saved.status === "running" || saved.status === "paused")
+  ) {
+    // Crash or reboot mid-service: carry on where the service should be now (EXE-8).
+    currentPlan = savedPlan;
+    state = { ...saved, banner: "Recovered after a restart. The timer carried on from where it was.", bannerAction: undefined };
   } else {
-    const waiting = createWaitingState(currentPlan, today);
-    const now = Date.now();
-    const start = currentPlan.autoStart
-      ? new Date(now).setHours(
-          Number(currentPlan.startTime.split(":")[0]),
-          Number(currentPlan.startTime.split(":")[1]),
-          0,
-          0,
-        )
-      : Number.NaN;
-    state = !currentPlan.autoStart
-      ? createIdleState(currentPlan, today)
-      : currentPlan.autoStart && now < start && start - now <= 30 * 60_000
-        ? waiting
-        : reduce(waiting, { type: "tick" }, now, currentPlan);
+    armForToday(now);
   }
-  if (state.status !== "idle" && state.status !== "finished") persistRunState();
+  persistRunState();
 }
 
 const singleInstanceLock = app.requestSingleInstanceLock();
