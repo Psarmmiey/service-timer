@@ -46,7 +46,7 @@ import {
 import { useChime } from "./chime";
 import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
 import { PlanEditorDialog } from "./plan-editor";
-import { SettingsDialog } from "./settings-dialog";
+import { SettingsDialog, type Section as SettingsSection } from "./settings-dialog";
 import { useTheme } from "./theme";
 import { Walkthrough } from "./walkthrough";
 
@@ -311,6 +311,28 @@ function ControlApp() {
   const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  const openSettings = (section?: SettingsSection) => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  };
+  // Say who has just connected from a phone, so a stranger stands out (FR-22).
+  const seenPhones = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!state) return;
+    const connected = (state.web.phones ?? []).filter((phone) => phone.connected);
+    const previous = seenPhones.current;
+    seenPhones.current = new Set(connected.map((phone) => phone.id));
+    if (!previous) return;
+    for (const phone of connected) {
+      if (!previous.has(phone.id)) {
+        toast(`${phone.name} connected from a phone`, {
+          description: `${phone.device} · ${phone.address}`,
+          action: { label: "See phones", onClick: () => openSettings("phone") },
+        });
+      }
+    }
+  }, [state?.web.phones]);
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
@@ -471,7 +493,16 @@ function ControlApp() {
             {live ? <Badge className={behind ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" : ""}>{formatBehindAhead(view.behindAheadMs)}</Badge> : null}
             {view.blackout ? <Badge className="border-zinc-950 bg-zinc-950 text-zinc-50"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
             {state.web.running && state.web.clients > 0 ? (
-              <Badge title="Phones connected to phone control"><Smartphone className="mr-1 size-3" /> {state.web.clients} phone{state.web.clients === 1 ? "" : "s"}</Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 rounded-full px-2 text-xs font-medium"
+                title={(state.web.phones ?? []).filter((phone) => phone.connected).map((phone) => phone.name).join(", ")}
+                aria-label="Connected phones"
+                onClick={() => openSettings("phone")}
+              >
+                <Smartphone className="size-3" /> {state.web.clients} phone{state.web.clients === 1 ? "" : "s"}
+              </Button>
             ) : null}
           </div>
           <div className="flex-1" />
@@ -480,7 +511,7 @@ function ControlApp() {
           <Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)} data-tour="plans">Plans</Button>
           <Tooltip label="Walkthrough (?)"><Button aria-label="Walkthrough" variant="ghost" size="icon" onClick={() => setWalkthroughOpen(true)}><HelpCircle className="size-[18px]" /></Button></Tooltip>
           <Tooltip label="Settings">
-            <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => setSettingsOpen(true)} data-tour="settings">
+            <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => openSettings()} data-tour="settings">
               <Settings className="size-[18px]" />
               {state.update.state === "ready" ? <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-blue-500" aria-label="Update ready" /> : null}
             </Button>
@@ -740,7 +771,7 @@ function ControlApp() {
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
       <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} />
-      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
+      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} startSection={settingsSection} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
       <Walkthrough open={walkthroughOpen} onClose={closeWalkthrough} />
       <Toaster theme={theme} />
     </TooltipProvider>

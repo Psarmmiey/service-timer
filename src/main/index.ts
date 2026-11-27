@@ -145,6 +145,8 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "blackout":
       return typeof value.on === "boolean";
     case "skipAutoStartToday":
+    case "disconnectPhone":
+      return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");
     case "newPhonePin":
     case "identifyDisplays":
       return true;
@@ -254,7 +256,7 @@ function toAppState(now: number): AppState {
     settings,
     update: { ...updateStatus, currentVersion: app.getVersion() },
     showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
-    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined },
+    web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined, phones: webStatus.running ? webControl.phones() : [] },
   };
 }
 
@@ -694,6 +696,14 @@ function registerIpc(): void {
         settings = { ...settings, phonePin: newPin() };
         store?.write("settings.json", settings);
         webControl.signOutAll();
+      } else if (payload.type === "disconnectPhone") {
+        webControl.disconnect(payload.id);
+        if (payload.newPin) {
+          settings = { ...settings, phonePin: newPin() };
+          store?.write("settings.json", settings);
+          webControl.signOutAll();
+        }
+        broadcastState();
       } else if (payload.type === "skipAutoStartToday") {
         if (state.status === "waiting") {
           autoStartSkippedOn = state.runDate;

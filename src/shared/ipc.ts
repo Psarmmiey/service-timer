@@ -31,6 +31,18 @@ export type Settings = {
   phonePin?: string;
 };
 
+/** What the laptop sees about each signed-in phone. Never includes the session token. */
+export type PhoneInfo = {
+  id: string;
+  name: string;
+  device: string;
+  address: string;
+  connected: boolean;
+  signedInAt: number;
+  lastSeenAt: number;
+  lastAction?: { label: string; at: number };
+};
+
 export type WebControlStatus = {
   enabled: boolean;
   running: boolean;
@@ -38,6 +50,8 @@ export type WebControlStatus = {
   qrSvg?: string;
   pin?: string;
   clients: number;
+  /** Signed-in phones, connected ones first. */
+  phones?: PhoneInfo[];
   error?: string;
 };
 
@@ -57,6 +71,8 @@ export type TimerCommand =
   | { type: "checkForUpdates" }
   | { type: "skipAutoStartToday" }
   | { type: "newPhonePin" }
+  /** Sign one phone out; with newPin, also change the PIN so it can't sign straight back in. */
+  | { type: "disconnectPhone"; id: string; newPin?: boolean }
   | { type: "restartToUpdate" };
 
 export type DisplayOption = {

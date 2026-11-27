@@ -61,8 +61,8 @@ describe("phone control", () => {
     const port = url ? new URL(url).port : "4280";
     base = `http://127.0.0.1:${port}`;
 
-    expect((await post("/api/login", { pin: pin === "0000" ? "1111" : "0000" })).status).toBe(401);
-    const login = await post("/api/login", { pin });
+    expect((await post("/api/login", { pin: pin === "0000" ? "1111" : "0000", name: "Tester" })).status).toBe(401);
+    const login = await post("/api/login", { pin, name: "Tester" });
     expect(login.status).toBe(200);
     cookie = login.headers.get("set-cookie")!.split(";")[0]!;
     await control.keyboard.press("Escape");
@@ -113,6 +113,42 @@ describe("phone control", () => {
     expect((await post("/api/command", { type: "editPlan", plan: {} })).status).toBe(403);
     expect((await post("/api/command", { type: "next" }, false)).status).toBe(401);
   });
+
+  it("names each phone on the laptop and can disconnect one", async () => {
+    const pin = await (async () => {
+      await control.getByRole("button", { name: "Settings" }).click();
+      await control.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Phone control" }).click();
+      const value = (await control.getByLabel("Phone PIN").textContent())!.trim();
+      await control.keyboard.press("Escape");
+      return value;
+    })();
+    const adaLogin = await fetch(base + "/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Service-Timer": "1", "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36" },
+      body: JSON.stringify({ pin, name: "Ada" }),
+    });
+    const ada = adaLogin.headers.get("set-cookie")!.split(";")[0]!;
+    const abort = new AbortController();
+    const events = await fetch(base + "/api/events", { headers: { Cookie: ada }, signal: abort.signal });
+    await events.body!.getReader().read();
+
+    // The laptop says who connected, and the header button opens the list.
+    await control.getByText("Ada connected from a phone").waitFor({ timeout: 5_000 });
+    await control.getByRole("button", { name: "Connected phones" }).click();
+    const list = control.getByRole("region", { name: "Signed-in phones" });
+    await list.locator('[data-phone="Ada"]:has-text("Android phone · Chrome")').waitFor();
+    await list.locator('[data-phone="Tester"]').waitFor();
+
+    await list.getByRole("button", { name: "Disconnect Ada" }).click();
+    await list.locator('[data-phone="Ada"]').getByRole("button", { name: "Disconnect", exact: true }).click();
+    await list.locator('[data-phone="Ada"]').waitFor({ state: "detached", timeout: 5_000 });
+    abort.abort();
+    const asAda = await fetch(base + "/api/command", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Timer": "1", Cookie: ada }, body: JSON.stringify({ type: "pause" }) });
+    expect(asAda.status).toBe(401);
+    // Everyone else stays signed in.
+    expect((await post("/api/command", { type: "dismissBanner" })).status).toBe(204);
+    await control.keyboard.press("Escape");
+  }, 30_000);
 
   it("signs phones out when a new PIN is made", async () => {
     await control.getByRole("button", { name: "Settings" }).click();

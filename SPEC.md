@@ -436,3 +436,7 @@ The phone page has a second tab, Running order, showing today's items with times
 ### Decision: Do next versus Start now (27 Nov 2026)
 
 Do next queues an item straight after the current one; the current item carries on. Start now goes to the item straight away: the current item ends, the chosen item starts with its full time, and the items it jumped over stay in the order for later (they are not marked skipped). Because Start now changes the stage at once, the laptop asks for confirmation and the phone needs a second tap within 4 seconds. There is no Undo for Start now; Previous goes back if it was a mistake.
+
+### Decision: seeing and disconnecting phones (27 Nov 2026)
+
+Each person enters their name when signing in on a phone (remembered on that phone). The laptop shows a toast when a phone connects ("Ada connected from a phone", with the device and network address), and the phones button in the header opens Settings, Phone control, at a list of signed-in phones: name, device and browser, address, connected or last seen, and their last action (for example "Next at 10:42"). Any phone can be disconnected from that list. Its page returns to sign-in with "The timer laptop disconnected this phone." Because a disconnected phone could sign back in with the PIN, the same check offers "Disconnect and change PIN", which signs every phone out. Names are self-reported, so the device and address are shown alongside to spot a stranger.

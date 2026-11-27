@@ -2,7 +2,10 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { networkInterfaces } from "node:os";
+import type { PhoneInfo } from "../shared/ipc";
 import { PHONE_PAGE_HTML } from "./phone-page";
+
+export type { PhoneInfo };
 
 /**
  * Phone control (FR-22): a small web page served on the local network. Phones sign in
@@ -36,12 +39,62 @@ export const DEFAULT_PHONE_PORT = 4280;
 const SESSION_COOKIE = "st_session";
 const MAX_BODY_BYTES = 2048;
 const LOGIN_ATTEMPTS_PER_MINUTE = 5;
+const SESSION_HOURS = 12;
+
+type PhoneSession = Omit<PhoneInfo, "connected"> & { token: string };
+
+const NAME_MAX = 40;
+
+/** A short, friendly description of the phone from its browser, such as "iPhone · Safari". */
+export function describeDevice(userAgent: string | undefined): string {
+  const ua = userAgent ?? "";
+  const device = /iPad/.test(ua) ? "iPad"
+    : /iPhone/.test(ua) ? "iPhone"
+      : /Android/.test(ua) ? (/Mobile/.test(ua) ? "Android phone" : "Android tablet")
+        : /Macintosh/.test(ua) ? "Mac"
+          : /Windows/.test(ua) ? "Windows PC"
+            : /CrOS/.test(ua) ? "Chromebook"
+              : /Linux/.test(ua) ? "Linux" : "Unknown device";
+  const browser = /SamsungBrowser/.test(ua) ? "Samsung Internet"
+    : /EdgiOS|EdgA|Edg\//.test(ua) ? "Edge"
+      : /FxiOS|Firefox\//.test(ua) ? "Firefox"
+        : /CriOS|Chrome\//.test(ua) ? "Chrome"
+          : /Safari\//.test(ua) ? "Safari" : "";
+  return browser ? `${device} · ${browser}` : device;
+}
+
+/** Plain-words label for the phone's last action, for the laptop's list. */
+export function actionLabel(command: Record<string, unknown>): string {
+  switch (command.type) {
+    case "start": case "startChoice": return "Started the service";
+    case "pause": return "Paused";
+    case "resume": return "Resumed";
+    case "next": return "Next";
+    case "previous": return "Previous";
+    case "adjust": return typeof command.ms === "number" && command.ms < 0 ? "Took time off" : "Added time";
+    case "message": return "Sent a message";
+    case "clearMessage": return "Cleared the message";
+    case "blackout": return command.on ? "Blacked out the stage" : "Brought the stage back";
+    case "dismissBanner": return "Dismissed a notice";
+    case "startNow": return "Started an item early";
+    case "undoReorder": return "Undid a change";
+    default: return "Changed the running order";
+  }
+}
+
+function cleanName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  // eslint-disable-next-line no-control-regex
+  const name = value.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, NAME_MAX);
+  return name ? name : null;
+}
 
 export type WebControlOptions = {
   getSnapshot: () => unknown;
   /** Apply a phone command. Returns false if it was rejected. */
   onCommand: (command: Record<string, unknown>) => boolean;
   getPin: () => string;
+  /** Called whenever a phone signs in, connects, disconnects or does something. */
   onClientsChanged?: (count: number) => void;
 };
 
@@ -50,6 +103,9 @@ export type WebControl = {
   stop: () => Promise<void>;
   broadcast: () => void;
   signOutAll: () => void;
+  /** Sign one phone out and close its connection. Returns false if it wasn't found. */
+  disconnect: (id: string) => boolean;
+  phones: () => PhoneInfo[];
   clientCount: () => number;
   port: () => number | null;
 };
@@ -114,19 +170,26 @@ function send(response: ServerResponse, status: number, body?: unknown, headers:
 }
 
 export function createWebControl(options: WebControlOptions): WebControl {
-  const sessions = new Set<string>();
+  const sessions = new Map<string, PhoneSession>();
   const attempts = new Map<string, { count: number; resetAt: number }>();
-  const streams = new Set<ServerResponse>();
+  /** Open live connections and the session each belongs to. */
+  const streams = new Map<ServerResponse, string>();
   let server: Server | null = null;
   let listeningPort: number | null = null;
   let keepAlive: NodeJS.Timeout | null = null;
 
-  const signedIn = (request: IncomingMessage) => {
+  const sessionFor = (request: IncomingMessage): PhoneSession | undefined => {
     const token = readCookie(request, SESSION_COOKIE);
-    return Boolean(token && sessions.has(token));
+    return token ? sessions.get(token) : undefined;
   };
 
   const notifyClients = () => options.onClientsChanged?.(streams.size);
+
+  const endStream = (stream: ServerResponse, reason?: string) => {
+    if (reason) stream.write(`event: signed-out\ndata: ${JSON.stringify({ reason })}\n\n`);
+    stream.end();
+    streams.delete(stream);
+  };
 
   const handle = async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -144,7 +207,8 @@ export function createWebControl(options: WebControlOptions): WebControl {
     }
 
     if (method === "GET" && url.pathname === "/api/session") {
-      send(response, 200, { signedIn: signedIn(request) });
+      const session = sessionFor(request);
+      send(response, 200, { signedIn: Boolean(session), name: session?.name });
       return;
     }
 
@@ -170,19 +234,41 @@ export function createWebControl(options: WebControlOptions): WebControl {
         send(response, 401, { error: "That PIN isn't right." });
         return;
       }
+      const name = cleanName(body.name);
+      if (!name) {
+        send(response, 400, { error: "Add your name so the timer laptop can see who is connected." });
+        return;
+      }
       attempts.delete(ip);
+      const address = ip.replace(/^::ffff:/, "");
+      // The same person signing in again from the same phone replaces their old, idle entry.
+      const live = new Set(streams.values());
+      for (const [oldToken, old] of sessions) {
+        if (old.name === name && old.address === address && !live.has(oldToken)) sessions.delete(oldToken);
+      }
       const token = randomBytes(24).toString("hex");
-      sessions.add(token);
+      sessions.set(token, {
+        token,
+        id: randomBytes(6).toString("hex"),
+        name,
+        device: describeDevice(request.headers["user-agent"]),
+        address,
+        signedInAt: now,
+        lastSeenAt: now,
+      });
+      notifyClients();
       send(response, 200, { ok: true }, {
-        "Set-Cookie": `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${60 * 60 * 12}`,
+        "Set-Cookie": `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${60 * 60 * SESSION_HOURS}`,
       });
       return;
     }
 
-    if (!signedIn(request)) {
+    const session = sessionFor(request);
+    if (!session) {
       send(response, 401, { error: "Sign in with the PIN shown in Settings on the timer laptop." });
       return;
     }
+    session.lastSeenAt = Date.now();
 
     if (method === "GET" && url.pathname === "/api/events") {
       response.writeHead(200, {
@@ -191,10 +277,11 @@ export function createWebControl(options: WebControlOptions): WebControl {
         Connection: "keep-alive",
       });
       response.write(`data: ${JSON.stringify(options.getSnapshot())}\n\n`);
-      streams.add(response);
+      streams.set(response, session.token);
       notifyClients();
       request.on("close", () => {
-        streams.delete(response);
+        if (!streams.delete(response)) return;
+        session.lastSeenAt = Date.now();
         notifyClients();
       });
       return;
@@ -210,13 +297,16 @@ export function createWebControl(options: WebControlOptions): WebControl {
         send(response, 400, { error: "Command rejected." });
         return;
       }
+      session.lastAction = { label: actionLabel(body), at: Date.now() };
+      notifyClients();
       send(response, 204);
       return;
     }
 
     if (method === "POST" && url.pathname === "/api/logout") {
-      const token = readCookie(request, SESSION_COOKIE);
-      if (token) sessions.delete(token);
+      sessions.delete(session.token);
+      for (const [stream, token] of streams) if (token === session.token) endStream(stream);
+      notifyClients();
       send(response, 204, undefined, { "Set-Cookie": `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
       return;
     }
@@ -224,9 +314,8 @@ export function createWebControl(options: WebControlOptions): WebControl {
     send(response, 404, { error: "Not found" });
   };
 
-  const closeStreams = () => {
-    for (const stream of streams) stream.end();
-    streams.clear();
+  const closeStreams = (reason?: string) => {
+    for (const stream of [...streams.keys()]) endStream(stream, reason);
     notifyClients();
   };
 
@@ -250,7 +339,7 @@ export function createWebControl(options: WebControlOptions): WebControl {
             listeningPort = (next.address() as AddressInfo).port;
             // Comments keep the connection open through Wi-Fi routers that drop idle sockets.
             keepAlive = setInterval(() => {
-              for (const stream of streams) stream.write(": keep-alive\n\n");
+              for (const stream of streams.keys()) stream.write(": keep-alive\n\n");
             }, 15_000);
             resolve(listeningPort);
           });
@@ -276,11 +365,28 @@ export function createWebControl(options: WebControlOptions): WebControl {
     broadcast: () => {
       if (!streams.size) return;
       const payload = `data: ${JSON.stringify(options.getSnapshot())}\n\n`;
-      for (const stream of streams) stream.write(payload);
+      for (const stream of streams.keys()) stream.write(payload);
     },
     signOutAll: () => {
       sessions.clear();
-      closeStreams();
+      closeStreams("pin-changed");
+    },
+    disconnect: (id) => {
+      const session = [...sessions.values()].find((candidate) => candidate.id === id);
+      if (!session) return false;
+      sessions.delete(session.token);
+      for (const [stream, token] of [...streams]) if (token === session.token) endStream(stream, "disconnected");
+      notifyClients();
+      return true;
+    },
+    phones: () => {
+      const connected = new Set(streams.values());
+      // Sessions last as long as the phone's cookie (12 hours).
+      const cutoff = Date.now() - SESSION_HOURS * 60 * 60 * 1000;
+      for (const [token, session] of sessions) if (session.signedInAt < cutoff) sessions.delete(token);
+      return [...sessions.values()]
+        .map(({ token, ...info }) => ({ ...info, connected: connected.has(token) }))
+        .sort((a, b) => Number(b.connected) - Number(a.connected) || b.lastSeenAt - a.lastSeenAt);
     },
     clientCount: () => streams.size,
     port: () => listeningPort,

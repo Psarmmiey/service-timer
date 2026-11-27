@@ -66,6 +66,8 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   .login p { color:var(--muted); margin:0 0 18px; font-size:15px; }
   .login input { width:100%; text-align:center; font-size:40px; letter-spacing:.5em; padding:10px 0 10px .5em; border-radius:16px; border:1px solid var(--line); background:var(--card); font-variant-numeric: tabular-nums; }
   .login button { width:100%; margin-top:12px; }
+  .login label { display:block; text-align:left; color:var(--muted); font-size:14px; margin:14px 2px 6px; }
+  .login input#name { font-size:18px; letter-spacing:normal; text-align:left; padding:12px 14px; }
   .error { color:#fca5a5; min-height:20px; margin-top:10px; font-size:14px; }
   .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:4px; margin-bottom:12px; }
   .tabs button { min-height:40px; border:0; border-radius:10px; background:transparent; color:var(--muted); font-size:15px; }
@@ -108,8 +110,11 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 <body>
 <div id="login" class="login hidden">
   <h1>Service Timer</h1>
-  <p>Enter the 4-digit PIN shown on the timer laptop under Settings, Phone control.</p>
+  <p>Enter your name and the 4-digit PIN shown on the timer laptop under Settings, Phone control.</p>
   <form id="login-form">
+    <label for="name">Your name (shown on the laptop)</label>
+    <input id="name" maxlength="40" autocomplete="name" placeholder="For example, Tolu" required>
+    <label for="pin">PIN</label>
     <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" required>
     <button class="primary" type="submit">Connect</button>
   </form>
@@ -195,6 +200,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   var state = null, source = null, lastStatus = null, lastItem = null;
   var tab = localStorage.getItem("st-tab") || "timer", editing = -1, editMinutes = 0, rowsKey = "", confirming = -1, confirmTimer = 0;
   var $ = function (id) { return document.getElementById(id); };
+  var myName = "";
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function clock(ms) { var d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
@@ -208,7 +214,9 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   function showLogin(message) {
     if (source) { source.close(); source = null; }
     $("app").classList.add("hidden"); $("login").classList.remove("hidden");
-    $("login-error").textContent = message || ""; $("pin").value = ""; $("pin").focus();
+    $("login-error").textContent = message || ""; $("pin").value = "";
+    $("name").value = $("name").value || localStorage.getItem("st-name") || "";
+    ($("name").value ? $("pin") : $("name")).focus();
   }
 
   function command(body, label) {
@@ -375,7 +383,11 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     $("login").classList.add("hidden"); $("app").classList.remove("hidden");
     if (source) source.close();
     source = new EventSource("/api/events");
-    source.onopen = function () { $("conn").textContent = "Live"; $("conn").className = "status"; };
+    source.onopen = function () { $("conn").textContent = "Live" + (myName ? " · signed in as " + myName : ""); $("conn").className = "status"; };
+    source.addEventListener("signed-out", function (e) {
+      var reason = ""; try { reason = JSON.parse(e.data).reason; } catch (err) {}
+      showLogin(reason === "disconnected" ? "The timer laptop disconnected this phone." : reason === "pin-changed" ? "The PIN was changed on the timer laptop. Enter the new one." : "Please sign in again.");
+    });
     source.onmessage = function (e) { try { render(JSON.parse(e.data)); } catch (err) {} };
     source.onerror = function () {
       $("conn").textContent = "Reconnecting…"; $("conn").className = "status bad";
@@ -416,12 +428,17 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   };
   $("login-form").onsubmit = function (e) {
     e.preventDefault();
-    fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Timer": "1" }, body: JSON.stringify({ pin: $("pin").value }) })
+    var name = $("name").value.trim();
+    if (!name) { $("login-error").textContent = "Add your name so the laptop can see who is connected."; $("name").focus(); return; }
+    fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Timer": "1" }, body: JSON.stringify({ pin: $("pin").value, name: name }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (res) { if (res.ok) connect(); else { $("login-error").textContent = res.j.error || "Couldn't sign in"; $("pin").value = ""; } })
+      .then(function (res) {
+        if (res.ok) { myName = name; localStorage.setItem("st-name", name); connect(); }
+        else { $("login-error").textContent = res.j.error || "Couldn't sign in"; $("pin").value = ""; }
+      })
       .catch(function () { $("login-error").textContent = "Can't reach the timer laptop."; });
   };
-  fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { if (j.signedIn) connect(); else showLogin(); }).catch(function () { showLogin("Can't reach the timer laptop."); });
+  fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { if (j.signedIn) { myName = j.name || ""; connect(); } else showLogin(); }).catch(function () { showLogin("Can't reach the timer laptop."); });
 })();
 </script>
 </body>
