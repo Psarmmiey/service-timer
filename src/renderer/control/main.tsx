@@ -5,7 +5,9 @@ import {
   ArrowUp,
   Check,
   Clock3,
+  EyeOff,
   GripVertical,
+  HelpCircle,
   Pause,
   Play,
   Plus,
@@ -17,9 +19,8 @@ import { StrictMode, useEffect, useRef, useState, type PointerEvent } from "reac
 import { createRoot } from "react-dom/client";
 import { toast } from "sonner";
 import type { AppState, TimerCommand } from "../../shared/ipc";
-import type { Item, Plan } from "../../engine";
 import "../shared/global.css";
-import { formatBehindAhead, formatClock, formatMinutesLate } from "../shared/format";
+import { formatBehindAhead, formatClock, formatMinutesLate, formatStageTime } from "../shared/format";
 import { StageView } from "../shared/stage-view";
 import {
   Badge,
@@ -41,157 +42,28 @@ import {
   Tooltip,
   TooltipProvider,
 } from "../shared/ui";
+import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
+import { PlanEditorDialog } from "./plan-editor";
+import { SettingsDialog } from "./settings-dialog";
+import { useTheme } from "./theme";
+import { Walkthrough } from "./walkthrough";
 
-const MINUTE_MS = 60_000;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isTime(value: unknown): value is string {
-  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
-}
-
-function isDate(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1, day!));
-  return date.getUTCFullYear() === year
-    && date.getUTCMonth() === month! - 1
-    && date.getUTCDate() === day;
-}
-
-function normaliseImportedPlan(value: unknown): Plan | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.id !== "string" || !value.id.trim()) return null;
-  if (typeof value.name !== "string" || !value.name.trim()) return null;
-  if (!isTime(value.startTime)) return null;
-  if (!Array.isArray(value.days) || !value.days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)) return null;
-  if (typeof value.autoStart !== "boolean") return null;
-  if (value.autoAdvanceSeconds !== undefined && (!isFiniteNumber(value.autoAdvanceSeconds) || value.autoAdvanceSeconds < 0)) return null;
-  if (!Array.isArray(value.items)) return null;
-  if (typeof value.updatedAt !== "string" || !value.updatedAt.trim()) return null;
-  if (value.kind !== "recurring" && value.kind !== "oneOff") return null;
-  if (value.kind === "oneOff" && !isDate(value.date)) return null;
-  if (value.kind === "recurring" && value.date !== undefined && !isDate(value.date)) return null;
-  const days = value.days.filter((day): day is number => typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6);
-
-  const items: Item[] = [];
-  for (const item of value.items) {
-    if (!isRecord(item)) return null;
-    if (typeof item.id !== "string" || !item.id.trim()) return null;
-    if (typeof item.title !== "string" || !item.title.trim()) return null;
-    if (!isFiniteNumber(item.minutes) || item.minutes <= 0) return null;
-    if (item.note !== undefined && typeof item.note !== "string") return null;
-    if (item.warnAtSeconds !== undefined && (!isFiniteNumber(item.warnAtSeconds) || item.warnAtSeconds < 0)) return null;
-    items.push({
-      id: item.id.trim(),
-      title: item.title.trim(),
-      minutes: item.minutes,
-      ...(item.note !== undefined ? { note: item.note } : {}),
-      ...(item.warnAtSeconds !== undefined ? { warnAtSeconds: item.warnAtSeconds } : {}),
-    });
-  }
-
-  return {
-    id: value.id.trim(),
-    name: value.name.trim(),
-    startTime: value.startTime,
-    days: [...new Set(days)].sort((a, b) => a - b),
-    autoStart: value.autoStart,
-    ...(value.autoAdvanceSeconds !== undefined ? { autoAdvanceSeconds: value.autoAdvanceSeconds } : {}),
-    items,
-    updatedAt: value.updatedAt.trim(),
-    kind: value.kind,
-    ...(typeof value.date === "string" ? { date: value.date } : {}),
-  };
-}
-
-function send(command: TimerCommand) {
-  window.api.send(command);
-}
-
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function planWhenLabel(plan: Plan): string {
-  if (plan.kind === "oneOff" && plan.date) {
-    const [year, month, day] = plan.date.split("-").map(Number);
-    const date = new Date(year!, month! - 1, day!);
-    return `${DAY_NAMES[date.getDay()]} ${day} ${date.toLocaleString("en-GB", { month: "short" })} ${plan.startTime}`;
-  }
-  const days = [...plan.days].sort((a, b) => a - b).map((day) => DAY_NAMES[day]).join(", ");
-  return `${days || "No days"} ${plan.startTime}`;
-}
-
-function plannedStartOf(state: AppState): number {
-  return state.view.scheduleRows[0]?.scheduledStart ?? state.now;
-}
-
-/** More than a minute after the planned start, Start must go through the late start prompt (FR-16). */
-function isLateStart(state: AppState): boolean {
-  return state.now - plannedStartOf(state) > 60_000;
-}
-
-/** Minutes field that only commits a valid value on blur or Enter, never a half-typed one. */
-function MinutesInput({ value, onCommit, label }: { value: number; onCommit: (minutes: number) => void; label: string }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
-  const commit = () => {
-    const minutes = Number(text);
-    if (Number.isFinite(minutes) && minutes >= 0.5 && minutes <= 600) {
-      const rounded = Math.round(minutes * 2) / 2;
-      if (rounded !== value) onCommit(rounded);
-      setText(String(rounded));
-    } else {
-      setText(String(value));
-    }
-  };
-  return (
-    <Input
-      aria-label={label}
-      type="number"
-      min="0.5"
-      step="0.5"
-      value={text}
-      onChange={(event) => setText(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") commit();
-        if (event.key === "Escape") setText(String(value));
-      }}
-    />
-  );
-}
-
-function HoldButton({
-  label,
-  amount,
-}: {
-  label: string;
-  amount: number;
-}) {
+function HoldButton({ label, amount, disabled }: { label: string; amount: number; disabled?: boolean }) {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const stop = () => {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
   };
-
   const start = (event: PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || disabled) return;
     send({ type: "adjust", ms: amount });
     timer.current = setInterval(() => send({ type: "adjust", ms: amount }), 450);
   };
-
   useEffect(() => stop, []);
-
   return (
     <Button
-      className="h-[60px] w-[76px] text-sm font-semibold"
+      className="h-[64px] w-[76px] text-sm font-semibold"
+      disabled={disabled}
       onPointerDown={start}
       onPointerUp={stop}
       onPointerLeave={stop}
@@ -205,13 +77,7 @@ function HoldButton({
   );
 }
 
-function ConfirmDialog({
-  action,
-  onClose,
-}: {
-  action: "restart" | "stop" | null;
-  onClose: () => void;
-}) {
+function ConfirmDialog({ action, onClose }: { action: "restart" | "stop" | null; onClose: () => void }) {
   const restarting = action === "restart";
   return (
     <Dialog open={action !== null} onOpenChange={(open) => !open && onClose()}>
@@ -219,8 +85,8 @@ function ConfirmDialog({
         <DialogTitle>{restarting ? "Restart this item?" : "Stop the timer?"}</DialogTitle>
         <DialogDescription>
           {restarting
-            ? "The current item will return to its full planned duration."
-            : "The service will be marked as ended. This cannot be undone."}
+            ? "The current item goes back to its full planned time."
+            : "The service is marked as ended and the stage shows the clock. You can start again afterwards."}
         </DialogDescription>
         <div className="mt-6 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
@@ -239,61 +105,40 @@ function ConfirmDialog({
   );
 }
 
-function CustomAdjustDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+function CustomAdjustDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [minutes, setMinutes] = useState("1");
   const amount = Math.max(0, Math.round((Number(minutes) || 0) * MINUTE_MS));
-
   const adjust = (direction: 1 | -1) => {
     if (amount <= 0) return;
     send({ type: "adjust", ms: amount * direction });
     onOpenChange(false);
   };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(420px,calc(100vw-32px))]">
         <DialogTitle>Adjust time</DialogTitle>
-        <DialogDescription>Enter a custom amount to add or subtract.</DialogDescription>
+        <DialogDescription>Add or take away time on the item running now.</DialogDescription>
         <div className="mt-5">
           <label className="mb-2 block text-sm font-medium" htmlFor="custom-adjust-minutes">Amount</label>
           <div className="flex items-center gap-2">
-            <Input
-              id="custom-adjust-minutes"
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              value={minutes}
-              onChange={(event) => setMinutes(event.target.value)}
-              className="h-11"
-            />
+            <Input id="custom-adjust-minutes" type="number" min="0" step="1" inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value)} className="h-11" />
             <span className="text-sm text-zinc-500">minutes</span>
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="outline" disabled={amount <= 0} onClick={() => adjust(-1)}>Subtract</Button>
-          <Button disabled={amount <= 0} onClick={() => adjust(1)}>Add time</Button>
+          <Button disabled={amount <= 0} onClick={() => adjust(-1)}>Take away</Button>
+          <Button variant="default" disabled={amount <= 0} onClick={() => adjust(1)}>Add time</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function LateStartDialog({
-  state,
-  open,
-  onOpenChange,
-}: {
-  state: AppState;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+/**
+ * Starting the service: the late start prompt (FR-16) when more than a minute late,
+ * or "start from another item" when on time or early.
+ */
+function StartDialog({ state, open, mode, onOpenChange }: { state: AppState; open: boolean; mode: "late" | "choose"; onOpenChange: (open: boolean) => void }) {
   const [choice, setChoice] = useState<"catchUp" | "fromTop" | "fromItem">("catchUp");
   const [itemIndex, setItemIndex] = useState("0");
   const plannedStart = plannedStartOf(state);
@@ -301,68 +146,64 @@ function LateStartDialog({
   const planEnded = state.now >= state.view.plannedFinish;
   useEffect(() => {
     if (!open) return;
-    setChoice(planEnded ? "fromTop" : "catchUp");
-    setItemIndex("0");
+    setChoice(mode === "choose" ? "fromItem" : planEnded ? "fromTop" : "catchUp");
+    setItemIndex(mode === "choose" ? "1" : "0");
     // Reset each time the prompt opens so last week's choice is never preselected.
   }, [open]);
-  const minutesFrom = (index: number) => state.plan.items.slice(index).reduce((sum, item) => sum + item.minutes, 0) * MINUTE_MS;
-  const finish = choice === "catchUp"
-    ? state.view.plannedFinish
-    : state.now + minutesFrom(choice === "fromTop" ? 0 : Number(itemIndex));
+  const items = state.plan.items;
+  const minutesFrom = (index: number) => items.slice(index).reduce((sum, item) => sum + item.minutes, 0) * MINUTE_MS;
+  const finish = choice === "catchUp" ? state.view.plannedFinish : state.now + minutesFrom(choice === "fromTop" ? 0 : Number(itemIndex));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(600px,calc(100vw-32px))]">
-        <DialogTitle>You’re starting {formatMinutesLate(lateMs)} late</DialogTitle>
-        <DialogDescription>
-          It’s {formatClock(state.now)}. {state.plan.name} was planned to start at {formatClock(plannedStart)}. How should the timer pick up?
-        </DialogDescription>
-        <ToggleGroup
-          type="single"
-          value={choice}
-          onValueChange={(value) => value && setChoice(value as typeof choice)}
-          className="mt-5 grid gap-2"
-          aria-label="Late start choice"
-        >
-          <ToggleGroupItem value="catchUp" disabled={planEnded} className="h-auto w-full justify-start p-3 text-left">
-            <span>
-              <span className="block text-sm font-semibold">Catch up to the clock <Badge className="ml-2">Recommended</Badge></span>
-              <span className="mt-1 block text-xs font-normal text-zinc-500">
-                {planEnded
-                  ? `Today's plan ended at ${formatClock(state.view.plannedFinish)}, so there is nothing to catch up to.`
-                  : "Jump to the item that should be running now and mark earlier items skipped."}
-              </span>
-            </span>
-          </ToggleGroupItem>
-          <ToggleGroupItem value="fromTop" className="h-auto w-full justify-start p-3 text-left">
-            <span>
-              <span className="block text-sm font-semibold">Start from the top</span>
-              <span className="mt-1 block text-xs font-normal text-zinc-500">Start the first item with its full time and move the later schedule by {formatMinutesLate(lateMs)}.</span>
-            </span>
-          </ToggleGroupItem>
-          <ToggleGroupItem value="fromItem" className="h-auto w-full justify-start p-3 text-left">
-            <span>
-              <span className="block text-sm font-semibold">Start from a chosen item</span>
-              <span className="mt-1 block text-xs font-normal text-zinc-500">Pick any item. It starts now with its full time.</span>
-            </span>
-          </ToggleGroupItem>
-        </ToggleGroup>
+        {mode === "late" ? (
+          <>
+            <DialogTitle>You’re starting {formatMinutesLate(lateMs)} late</DialogTitle>
+            <DialogDescription>
+              It’s {formatClock(state.now)}. {state.plan.name} was planned to start at {formatClock(plannedStart)}. How should the timer pick up?
+            </DialogDescription>
+            <ToggleGroup type="single" value={choice} onValueChange={(value) => value && setChoice(value as typeof choice)} className="mt-5 grid gap-2" aria-label="Late start choice">
+              <ToggleGroupItem value="catchUp" disabled={planEnded} className="h-auto w-full justify-start p-3 text-left">
+                <span>
+                  <span className="block text-sm font-semibold">Catch up to the clock <Badge className="ml-2">Recommended</Badge></span>
+                  <span className="mt-1 block text-xs font-normal text-zinc-500">
+                    {planEnded ? `Today's plan ended at ${formatClock(state.view.plannedFinish)}, so there is nothing to catch up to.` : "Jump to the item that should be running now and mark earlier items skipped."}
+                  </span>
+                </span>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="fromTop" className="h-auto w-full justify-start p-3 text-left">
+                <span>
+                  <span className="block text-sm font-semibold">Start from the top</span>
+                  <span className="mt-1 block text-xs font-normal text-zinc-500">Start the first item with its full time and move the later schedule by {formatMinutesLate(lateMs)}.</span>
+                </span>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="fromItem" className="h-auto w-full justify-start p-3 text-left">
+                <span>
+                  <span className="block text-sm font-semibold">Start from a chosen item</span>
+                  <span className="mt-1 block text-xs font-normal text-zinc-500">Pick any item. It starts now with its full time.</span>
+                </span>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </>
+        ) : (
+          <>
+            <DialogTitle>Start from another item</DialogTitle>
+            <DialogDescription>The item you choose starts now with its full time. Items before it are marked skipped.</DialogDescription>
+          </>
+        )}
         {choice === "fromItem" ? (
           <div className="mt-3">
             <Select value={itemIndex} onValueChange={setItemIndex}>
-              <SelectTrigger className="w-full" aria-label="Item to start">
-                <SelectValue placeholder="Choose an item" />
-              </SelectTrigger>
+              <SelectTrigger className="w-full" aria-label="Item to start"><SelectValue placeholder="Choose an item" /></SelectTrigger>
               <SelectContent>
-                {state.plan.items.map((item, index) => (
-                  <SelectItem key={item.id} value={String(index)}>{item.title}</SelectItem>
-                ))}
+                {items.map((item, index) => <SelectItem key={item.id} value={String(index)}>{item.title} ({item.minutes} min)</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         ) : null}
         <div className="mt-6 flex items-center">
-          <span className="flex-1 text-sm text-zinc-500">Finish time: <strong className="text-zinc-950">{formatClock(finish)}</strong></span>
+          <span className="flex-1 text-sm text-zinc-500">Finishes at <strong className="text-zinc-950">{formatClock(finish)}</strong></span>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             variant="default"
@@ -380,36 +221,22 @@ function LateStartDialog({
   );
 }
 
-function AddItemDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+function AddItemDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState("5");
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogTitle>Add item after current</DialogTitle>
-        <DialogDescription>The timer will keep running. The new item is only added to this run.</DialogDescription>
+        <DialogDescription>The timer keeps running. The new item is only added to today's run.</DialogDescription>
         <form
           className="mt-5 grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             const duration = Number(minutes);
             if (!title.trim() || !Number.isFinite(duration) || duration <= 0) return;
-            send({
-              type: "insertAfterCurrent",
-              item: {
-                id: `extra-${Date.now()}`,
-                title: title.trim(),
-                minutes: duration,
-              },
-            });
-            toast.success("Item added after the current item", {
+            send({ type: "insertAfterCurrent", item: { id: `extra-${Date.now()}`, title: title.trim(), minutes: duration } });
+            toast.success(`${title.trim()} added after the current item`, {
               duration: 10_000,
               action: { label: "Undo", onClick: () => send({ type: "undoReorder" }) },
             });
@@ -419,7 +246,7 @@ function AddItemDialog({
         >
           <label className="grid gap-1 text-sm font-medium">
             Title
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus maxLength={80} />
+            <Input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus maxLength={80} placeholder="For example, Testimony" />
           </label>
           <label className="grid gap-1 text-sm font-medium">
             Minutes
@@ -435,383 +262,49 @@ function AddItemDialog({
   );
 }
 
-function PlanEditorDialog({
-  state,
-  open,
-  onOpenChange,
-}: {
-  state: AppState;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [plans, setPlans] = useState<Plan[]>(state.plans);
-  // The plan being edited. This is not the active plan: only "Set as active plan" changes that.
-  const [activeId, setActiveId] = useState(state.activePlanId);
-  const [draft, setDraft] = useState<Plan | null>(null);
-  const activePlanId = state.activePlanId;
-  const live = state.view.status === "running" || state.view.status === "overrun" || state.view.paused;
-  const runningPlanId = live ? state.plan.id : null;
-  const plansKey = JSON.stringify(state.plans);
-  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingDraftSave = useRef<{ plans: Plan[]; activePlanId: string } | null>(null);
-
-  // Only resync when the saved plans really change, not on every 250 ms state broadcast.
-  useEffect(() => {
-    setPlans(state.plans);
-  }, [plansKey]);
-
-  useEffect(() => {
-    if (!draft) setDraft(plans.find((plan) => plan.id === activeId) ?? plans[0] ?? null);
-  }, [draft, plans, activeId]);
-
-  useEffect(() => () => {
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-  }, []);
-
-  const save = (next: Plan[], nextActiveId = activePlanId) => {
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-    draftSaveTimer.current = null;
-    pendingDraftSave.current = null;
-    setPlans(next);
-    send({ type: "savePlans", plans: next, activePlanId: nextActiveId });
-  };
-
-  const flushDraftSave = () => {
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-    draftSaveTimer.current = null;
-    if (pendingDraftSave.current) {
-      send({ type: "savePlans", ...pendingDraftSave.current });
-      pendingDraftSave.current = null;
-    }
-  };
-
-  const updateDraft = (patch: Partial<Plan>) => {
-    if (!draft) return;
-    const next = { ...draft, ...patch, updatedAt: new Date().toISOString() };
-    setDraft(next);
-    const nextPlans = plans.map((plan) => plan.id === next.id ? next : plan);
-    setPlans(nextPlans);
-    pendingDraftSave.current = { plans: nextPlans, activePlanId };
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-    draftSaveTimer.current = setTimeout(flushDraftSave, 400);
-  };
-
-  const updateItem = (index: number, patch: Partial<Item>) => {
-    if (!draft) return;
-    const items = draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item);
-    updateDraft({ items });
-  };
-
-  const addItem = () => {
-    if (!draft) return;
-    updateDraft({
-      items: [...draft.items, {
-        id: `item-${Date.now()}`,
-        title: "New item",
-        minutes: 5,
-        warnAtSeconds: 120,
-      }],
-    });
-  };
-
-  const deleteItem = (index: number) => {
-    if (!draft) return;
-    const removed = draft.items[index];
-    if (!removed) return;
-    const items = draft.items.filter((_, itemIndex) => itemIndex !== index);
-    updateDraft({ items });
-    toast.success("Item deleted", {
-      duration: 10_000,
-      action: {
-        label: "Undo",
-        onClick: () => setDraft((latest) => {
-          if (!latest || latest.items.some((item) => item.id === removed.id)) return latest;
-          const restored = { ...latest, items: [...latest.items.slice(0, index), removed, ...latest.items.slice(index)], updatedAt: new Date().toISOString() };
-          setPlans((current) => {
-            const nextPlans = current.map((plan) => plan.id === restored.id ? restored : plan);
-            send({ type: "savePlans", plans: nextPlans, activePlanId });
-            return nextPlans;
-          });
-          return restored;
-        }),
-      },
-    });
-  };
-
-  const importJson = (file: File | undefined) => {
-    if (!file) return;
-    void file.text().then((text) => {
-      try {
-        const imported = normaliseImportedPlan(JSON.parse(text));
-        if (!imported) throw new Error("Invalid plan");
-        const next = [...plans, { ...imported, id: `${imported.id}-${Date.now()}` }];
-        save(next, next[next.length - 1]!.id);
-        setActiveId(next[next.length - 1]!.id);
-        setDraft(next[next.length - 1]!);
-        toast.success("Plan imported");
-      } catch {
-        toast.error("Could not import this plan");
-      }
-    });
-  };
-
-  const exportJson = () => {
-    if (!draft) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${draft.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "plan"}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => {
-      if (!nextOpen) flushDraftSave();
-      onOpenChange(nextOpen);
-    }}>
-      <DialogContent className="w-[min(1180px,calc(100vw-32px))] max-h-[calc(100vh-32px)] overflow-hidden p-0">
-        <div className="flex h-[660px] max-h-[calc(100vh-32px)]">
-          <aside className="w-[300px] shrink-0 border-r border-zinc-200 p-3">
-            <DialogTitle>Service plans</DialogTitle>
-            <div className="mt-3 flex gap-2">
-              <Button
-                variant="default"
-                className="flex-1"
-                onClick={() => {
-                  const plan: Plan = {
-                    id: `plan-${Date.now()}`,
-                    name: "New plan",
-                    startTime: "09:45",
-                    days: [0],
-                    autoStart: true,
-                    items: [],
-                    updatedAt: new Date().toISOString(),
-                    kind: "recurring",
-                  };
-                  const next = [...plans, plan];
-                  save(next);
-                  setActiveId(plan.id);
-                  setDraft(plan);
-                }}
-              >
-                <Plus className="size-4" /> New plan
-              </Button>
-              <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-zinc-200 px-3 text-sm font-medium hover:bg-zinc-100">
-                Import
-                <input className="hidden" type="file" accept=".json,application/json" onChange={(event) => importJson(event.target.files?.[0])} />
-              </label>
-            </div>
-            <div className="mt-3 grid gap-1">
-              {plans.map((plan) => (
-                <button
-                  key={plan.id}
-                  type="button"
-                  className={`rounded-lg px-3 py-2 text-left ${plan.id === activeId ? "bg-zinc-100" : "hover:bg-zinc-50"}`}
-                  onClick={() => { flushDraftSave(); setActiveId(plan.id); setDraft(plan); }}
-                >
-                  <span className="block text-sm font-semibold">
-                    {plan.name}
-                    {plan.id === activePlanId ? <Badge className="ml-2 h-5 px-1.5 text-[10px]">Active</Badge> : null}
-                    {plan.id === runningPlanId ? <Badge className="ml-1 h-5 border-green-200 bg-green-50 px-1.5 text-[10px] text-green-800">Running</Badge> : null}
-                  </span>
-                  <span className="text-xs text-zinc-500">{plan.kind === "recurring" ? "Recurring" : "One-off"} · {plan.startTime} · {plan.items.length} items</span>
-                </button>
-              ))}
-            </div>
-          </aside>
-          {draft ? (
-            <section className="min-w-0 flex-1 overflow-y-auto p-5">
-              <div className="flex items-end gap-2">
-                <label className="flex-1 text-sm font-medium">
-                  Plan name
-                  <Input className="mt-1 h-10 text-base font-semibold" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} />
-                </label>
-                <Button onClick={() => {
-                  const duplicate = { ...draft, id: `plan-${Date.now()}`, name: `${draft.name} copy`, items: draft.items.map((item) => ({ ...item, id: `${item.id}-${Date.now()}` })) };
-                  const next = [...plans, duplicate];
-                  save(next);
-                  setActiveId(duplicate.id);
-                  setDraft(duplicate);
-                }}>Duplicate</Button>
-                <Button
-                  disabled={draft.id === activePlanId || Boolean(runningPlanId)}
-                  title={runningPlanId ? "You can change the active plan after the service" : undefined}
-                  onClick={() => { flushDraftSave(); save(plans, draft.id); toast.success(`${draft.name} is now the active plan`); }}
-                >
-                  Set as active plan
-                </Button>
-                <Button onClick={exportJson}>Export</Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    if (plans.length <= 1) return;
-                    if (draft.id === runningPlanId) {
-                      toast.error("This plan is running. Stop the service before deleting it.");
-                      return;
-                    }
-                    const removed = draft;
-                    const remaining = plans.filter((plan) => plan.id !== draft.id);
-                    const nextActiveId = removed.id === activePlanId ? remaining[0]!.id : activePlanId;
-                    save(remaining, nextActiveId);
-                    setActiveId(nextActiveId);
-                    setDraft(remaining[0]!);
-                    toast.success("Plan deleted", {
-                      duration: 10_000,
-                      action: {
-                        label: "Undo",
-                        onClick: () => {
-                          const restored = [...remaining, removed];
-                          save(restored, removed.id === activePlanId ? removed.id : nextActiveId);
-                          setActiveId(removed.id);
-                          setDraft(removed);
-                        },
-                      },
-                    });
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-              <div className="mt-4 flex flex-wrap items-end gap-5">
-                <ToggleGroup type="single" value={draft.kind} onValueChange={(value) => value && updateDraft({ kind: value as Plan["kind"] })}>
-                  <ToggleGroupItem value="recurring">Recurring</ToggleGroupItem>
-                  <ToggleGroupItem value="oneOff">One-off date</ToggleGroupItem>
-                </ToggleGroup>
-                <label className="grid gap-1 text-sm font-medium">Start time
-                  <Input type="time" className="w-[120px]" value={draft.startTime} onChange={(event) => updateDraft({ startTime: event.target.value })} />
-                </label>
-                {draft.kind === "recurring" ? (
-                  <div>
-                    <span className="mb-1 block text-sm font-medium">Days</span>
-                    <div className="flex gap-1">
-                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
-                        <Button
-                          key={day}
-                          size="sm"
-                          variant={draft.days.includes(index) ? "default" : "outline"}
-                          onClick={() => updateDraft({ days: draft.days.includes(index) ? draft.days.filter((dayNumber) => dayNumber !== index) : [...draft.days, index] })}
-                        >
-                          {day}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid gap-1 text-sm font-medium">Date
-                    <Input type="date" value={draft.date ?? ""} onChange={(event) => updateDraft({ date: event.target.value })} />
-                  </label>
-                )}
-                <label className="flex items-center gap-2 text-sm"><Switch checked={draft.autoStart} onCheckedChange={(checked) => updateDraft({ autoStart: checked })} /> Start automatically</label>
-              </div>
-              <div className="mt-5 grid gap-2">
-                {draft.items.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-[1fr_100px_44px] gap-2 rounded-lg border border-zinc-200 p-2">
-                    <Input aria-label={`Item ${index + 1} title`} value={item.title} onChange={(event) => updateItem(index, { title: event.target.value })} />
-                    <MinutesInput label={`Item ${index + 1} minutes`} value={item.minutes} onCommit={(minutes) => updateItem(index, { minutes })} />
-                    <Button aria-label={`Delete ${item.title}`} variant="ghost" onClick={() => deleteItem(index)}>×</Button>
-                  </div>
-                ))}
-                <Button variant="outline" onClick={addItem}><Plus className="size-4" /> Add item</Button>
-              </div>
-            </section>
-          ) : null}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SettingsDialog({
-  state,
-  open,
-  onOpenChange,
-}: {
-  state: AppState;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const update = (patch: Partial<AppState["settings"]>) => {
-    send({ type: "saveSettings", settings: { ...state.settings, ...patch } });
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(760px,calc(100vw-32px))]">
-        <DialogTitle>Settings</DialogTitle>
-        <div className="mt-5 grid grid-cols-2 gap-4">
-          <section className="grid content-start gap-4 rounded-xl border border-zinc-200 p-4">
-            <h2 className="font-semibold">Stage display</h2>
-            <label className="grid gap-1 text-sm font-medium">Show timer on
-              <Select value={state.settings.stageDisplayId !== undefined ? String(state.settings.stageDisplayId) : "automatic"} onValueChange={(value) => update({ stageDisplayId: value === "automatic" ? undefined : Number(value) })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="automatic">Automatic · external display</SelectItem>
-                  <SelectItem value="-1">Primary display</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
-            <label className="grid gap-1 text-sm font-medium">Time up style
-              <ToggleGroup type="single" value={state.settings.timeUpStyle} onValueChange={(value) => value && update({ timeUpStyle: value as AppState["settings"]["timeUpStyle"] })}>
-                <ToggleGroupItem value="whole-screen">Whole screen red</ToggleGroupItem>
-                <ToggleGroupItem value="digits">Red digits only</ToggleGroupItem>
-              </ToggleGroup>
-            </label>
-            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.pulse} onCheckedChange={(pulse) => update({ pulse })} /> Pulse slowly at time up</label>
-          </section>
-          <section className="grid content-start gap-4 rounded-xl border border-zinc-200 p-4">
-            <h2 className="font-semibold">Startup and power</h2>
-            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.openAtLogin} onCheckedChange={(openAtLogin) => update({ openAtLogin })} /> Open when Windows starts</label>
-            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.keepAwake !== false} onCheckedChange={(keepAwake) => update({ keepAwake })} /> Keep the screen awake</label>
-            <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.trayOnClose} onCheckedChange={(trayOnClose) => update({ trayOnClose })} /> Minimise to tray instead of closing</label>
-          </section>
-          <section className="col-span-2 grid content-start gap-3 rounded-xl border border-zinc-200 p-4">
-            <h2 className="font-semibold">Updates</h2>
-            {state.update.portable ? (
-              <p className="text-sm text-zinc-600">
-                Portable builds cannot update automatically. Download and run the latest installer from GitHub Releases.
-              </p>
-            ) : (
-              <>
-                <label className="flex items-center gap-2 text-sm"><Switch checked={state.settings.automaticUpdates !== false} onCheckedChange={(automaticUpdates) => update({ automaticUpdates })} /> Automatic updates</label>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => send({ type: "checkForUpdates" })} disabled={state.update.state === "checking" || state.update.state === "downloading"}>Check for updates now</Button>
-                  {state.update.state === "ready" && <Button onClick={() => send({ type: "restartToUpdate" })}>Restart to update</Button>}
-                </div>
-                {state.update.state === "ready" && <p className="text-sm font-medium">Update ready: v{state.update.version}</p>}
-                {state.update.state === "error" && <p className="text-sm text-red-700">{state.update.message}</p>}
-              </>
-            )}
-          </section>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+const STATUS_STYLE: Record<string, { label: string; className: string }> = {
+  idle: { label: "Not started", className: "border-zinc-200 bg-zinc-100 text-zinc-700" },
+  waiting: { label: "Waiting", className: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300" },
+  running: { label: "Running", className: "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300" },
+  paused: { label: "Paused", className: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  overrun: { label: "Time up", className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" },
+  finished: { label: "Service ended", className: "border-zinc-200 bg-zinc-100 text-zinc-600" },
+};
 
 function ControlApp() {
   const [state, setState] = useState<AppState | null>(null);
   const [confirm, setConfirm] = useState<"restart" | "stop" | null>(null);
-  const [lateStartOpen, setLateStartOpen] = useState(false);
+  const [startDialog, setStartDialog] = useState<"late" | "choose" | null>(null);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [customAdjustOpen, setCustomAdjustOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(false);
   const messageRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<AppState | null>(null);
+  const autoWalkthroughShown = useRef(false);
   stateRef.current = state;
+  const theme = useTheme(state?.settings.theme);
 
   useEffect(() => window.api.onState(setState), []);
 
-  const active = state && ["running", "paused", "overrun"].includes(state.view.status);
-  // Use the engine's paused flag: a pause during time up reports status "overrun".
-  const paused = Boolean(state?.view.paused);
-  const waiting = state && (state.view.status === "idle" || state.view.status === "waiting" || state.view.status === "finished");
+  // First run: open the walkthrough once, but never in the middle of a service.
+  useEffect(() => {
+    if (!state || autoWalkthroughShown.current || !state.showWalkthrough || isLiveView(state)) return;
+    autoWalkthroughShown.current = true;
+    setWalkthroughOpen(true);
+  }, [state]);
+
+  const closeWalkthrough = () => {
+    setWalkthroughOpen(false);
+    const latest = stateRef.current;
+    if (latest && !latest.settings.walkthroughSeen) send({ type: "saveSettings", settings: { ...latest.settings, walkthroughSeen: true } });
+  };
 
   const startFor = (latest: AppState) => {
-    if (isLateStart(latest)) setLateStartOpen(true);
+    if (isLateStart(latest)) setStartDialog("late");
     else send({ type: "start" });
   };
 
@@ -821,23 +314,17 @@ function ControlApp() {
     else if (latest.view.paused) send({ type: "resume" });
     else send({ type: "pause" });
   };
-
-  const toggleMain = () => {
-    if (state) toggleFor(state);
-  };
   const toggleRef = useRef(toggleFor);
   toggleRef.current = toggleFor;
 
   const showMessage = (text: string) => {
     const value = text.trim();
-    if (!value) return;
-    send({ type: "message", text: value, flash });
+    if (value) send({ type: "message", text: value, flash });
   };
 
   useEffect(() => {
     const inDialog = () => Boolean(document.querySelector("[role='dialog'], [role='alertdialog']"));
     const isTyping = (target: HTMLElement | null) => Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
-    // Widgets that use arrow keys or Space themselves (toggle groups, selects, lists).
     const ownsKeys = (target: HTMLElement | null) => Boolean(target?.closest("[role='radiogroup'], [role='group'], [role='tablist'], [role='listbox'], [role='menu'], [role='combobox'], [role='switch'], [role='slider']"));
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -845,32 +332,28 @@ function ControlApp() {
       if (!latest || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       const key = event.key.toLowerCase();
-
       if ((event.ctrlKey || event.metaKey) && key === "e") {
         event.preventDefault();
         setPlansOpen(true);
         return;
       }
-      // Esc clears the stage message, including from the message box, but never from a dialog.
       if (key === "escape" && isTyping(target) && !inDialog()) {
         send({ type: "clearMessage" });
         return;
       }
-      // Shortcuts never fire while typing, inside a dialog, with modifiers or on key repeat,
-      // so holding a key can't skip several items.
+      // Shortcuts never fire while typing, inside a dialog, with modifiers or on key repeat.
       if (isTyping(target) || inDialog() || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
       if (ownsKeys(target) && (key === " " || key.startsWith("arrow"))) return;
-
+      const live = isLiveView(latest);
       switch (key) {
         case " ":
-          // Space always means start/pause, even when a button has focus, and must not also click it.
           event.preventDefault();
           toggleRef.current(latest);
           break;
         case "arrowright":
         case "n":
           event.preventDefault();
-          send({ type: "next" });
+          if (live) send({ type: "next" });
           break;
         case "arrowleft":
         case "p":
@@ -899,9 +382,12 @@ function ControlApp() {
           event.preventDefault();
           send({ type: "clearMessage" });
           break;
+        case "?":
+          event.preventDefault();
+          setWalkthroughOpen(true);
+          break;
       }
     };
-    // Stop a focused button from also being clicked by the Space we handled.
     const onKeyUp = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (event.key === " " && !isTyping(target) && !inDialog() && !ownsKeys(target)) event.preventDefault();
@@ -918,118 +404,198 @@ function ControlApp() {
     return <main className="flex h-full items-center justify-center text-sm text-zinc-500">Loading service…</main>;
   }
 
-  const currentRow = state.view.scheduleRows.find((row) => row.status === "current");
-  const onStatus = state.view.status === "overrun" ? "Time up" : paused ? "Paused" : state.view.status;
+  const { view } = state;
+  const live = isLiveView(state);
+  const statusKey = view.paused ? "paused" : view.status;
+  const status = STATUS_STYLE[statusKey] ?? STATUS_STYLE.idle!;
+  const currentRow = view.scheduleRows.find((row) => row.status === "current");
+  const firstRow = view.scheduleRows[0];
+  const overrun = view.status === "overrun";
+  const behind = view.behindAheadMs >= 60_000;
+  const dueEnd = state.now + view.timeLeftMs;
 
   const reorder = (command: TimerCommand, description: string) => {
     send(command);
-    toast.success(description, {
-      duration: 10_000,
-      action: { label: "Undo", onClick: () => send({ type: "undoReorder" }) },
-    });
+    toast.success(description, { duration: 10_000, action: { label: "Undo", onClick: () => send({ type: "undoReorder" }) } });
+  };
+
+  const saveRunToPlan = () => {
+    const items = view.scheduleRows.map((row) => row.item);
+    const plans = state.plans.map((plan) => (plan.id === state.plan.id ? { ...plan, items, updatedAt: new Date().toISOString() } : plan));
+    send({ type: "savePlans", plans, activePlanId: state.activePlanId });
+    toast.success(`Today's order saved to ${state.plan.name}`);
   };
 
   return (
     <TooltipProvider>
-      <main className="flex h-full min-h-0 flex-col bg-zinc-50">
+      <main className="flex h-full min-h-0 flex-col bg-zinc-50 text-zinc-950">
         <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4">
           <div className="flex items-center gap-2 text-sm font-bold"><Clock3 className="size-5" /> Service Timer</div>
           <div className="h-6 w-px bg-zinc-200" />
           <Button size="sm" className="font-medium" onClick={() => setPlansOpen(true)}>{state.plan.name} · {planWhenLabel(state.plan)}</Button>
-          <Badge className={state.view.status === "overrun" ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-800"}>{onStatus.charAt(0).toUpperCase() + onStatus.slice(1)}</Badge>
-          <Badge>{formatBehindAhead(state.view.behindAheadMs)}</Badge>
+          <div className="flex items-center gap-2" data-tour="status">
+            <Badge className={status.className}>{status.label}</Badge>
+            {live ? <Badge className={behind ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300" : ""}>{formatBehindAhead(view.behindAheadMs)}</Badge> : null}
+            {view.blackout ? <Badge className="border-zinc-950 bg-zinc-950 text-zinc-50"><EyeOff className="mr-1 size-3" /> Stage blacked out</Badge> : null}
+          </div>
           <div className="flex-1" />
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
           <div className="h-6 w-px bg-zinc-200" />
-          {state.update.state === "ready" && (
-            <button className="flex items-center gap-2 text-sm font-semibold" onClick={() => setSettingsOpen(true)}>
-              <span className="size-2 rounded-full bg-amber-500" />
-              Update ready: v{state.update.version}
-            </button>
-          )}
-          <Tooltip label="Plans"><Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)}>Plans</Button></Tooltip>
-          <Tooltip label="Settings"><Button aria-label="Settings" variant="ghost" size="icon" onClick={() => setSettingsOpen(true)}><Settings className="size-[18px]" /></Button></Tooltip>
+          <Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)} data-tour="plans">Plans</Button>
+          <Tooltip label="Walkthrough (?)"><Button aria-label="Walkthrough" variant="ghost" size="icon" onClick={() => setWalkthroughOpen(true)}><HelpCircle className="size-[18px]" /></Button></Tooltip>
+          <Tooltip label="Settings">
+            <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => setSettingsOpen(true)} data-tour="settings">
+              <Settings className="size-[18px]" />
+              {state.update.state === "ready" ? <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-blue-500" aria-label="Update ready" /> : null}
+            </Button>
+          </Tooltip>
         </header>
 
-        {state.view.banner ? (
-          <div className="flex h-10 shrink-0 items-center gap-3 border-b border-blue-200 bg-blue-50 px-4 text-xs text-blue-900">
-            <span className="flex-1">{state.view.banner}</span>
-            {state.view.bannerAction === "fromTop" ? (
-              <Button size="sm" onClick={() => send({ type: "startChoice", mode: "fromTop" })}>Start from the top instead</Button>
-            ) : null}
+        {view.banner ? (
+          <div className="flex h-10 shrink-0 items-center gap-3 border-b border-sky-200 bg-sky-50 px-4 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+            <span className="flex-1">{view.banner}</span>
+            {view.bannerAction === "fromTop" ? <Button size="sm" onClick={() => send({ type: "startChoice", mode: "fromTop" })}>Start from the top instead</Button> : null}
             <Button size="sm" variant="ghost" onClick={() => send({ type: "dismissBanner" })}>Dismiss</Button>
           </div>
         ) : null}
 
         <div className="flex min-h-0 flex-1 gap-4 p-4">
           <section className="flex min-w-0 flex-1 flex-col gap-3">
-            <div className="flex h-[212px] shrink-0 gap-3">
-              <div className="relative min-w-0 flex-1 overflow-hidden rounded-xl">
-                <div className="absolute left-3 top-2 z-10 text-[10px] font-semibold tracking-widest text-zinc-500">
-                  ON STAGE · {state.display.mode === "stage-window" ? `DISPLAY ${state.display.stageDisplayId ?? 2}` : "PREVIEW"}
+            <div className="flex min-h-0 flex-1 gap-3">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                  <span>{state.display.mode === "stage-window" ? "On stage now" : "Stage preview · no second screen"}</span>
+                  {view.blackout ? <span className="text-zinc-950">Blacked out</span> : null}
                 </div>
-                <StageView state={state} preview />
+                <div className="min-h-0 flex-1 [container-type:size]">
+                  <div
+                    data-tour="preview"
+                    className="relative mx-auto overflow-hidden rounded-xl ring-1 ring-zinc-200"
+                    style={{
+                      width: `min(100cqw, calc(100cqh * ${state.display.aspectRatio}))`,
+                      height: `min(100cqh, calc(100cqw / ${state.display.aspectRatio}))`,
+                    }}
+                  >
+                    <StageView state={state} preview />
+                    {view.blackout ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center text-sm text-[#d4d4d8]">
+                        <EyeOff className="size-6" />
+                        The stage is blacked out.
+                        <Button size="sm" onClick={() => send({ type: "blackout", on: false })}>Show the timer again (B)</Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div className="flex w-[220px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white p-3 text-xs">
-                <strong className="text-sm">{active ? state.view.current?.title : state.plan.items[0]?.title}</strong>
-                <span className="mt-1 text-zinc-500">
-                  {active && currentRow?.actualStart
-                    ? `Started ${formatClock(currentRow.actualStart)} · ${state.view.current?.minutes} min`
-                    : `Starts ${state.plan.startTime}`}
-                </span>
-                <span className="mt-1 text-zinc-500">
-                  {active ? `Ends at ${formatClock(state.now + Math.max(0, state.view.timeLeftMs))}` : "Waiting to start"}
-                </span>
-                <div className="my-2 h-px bg-zinc-100" />
-                <span className="text-zinc-500">Projected finish <strong className="float-right text-zinc-950">{formatClock(state.view.projectedFinish)}</strong></span>
-                <span className="mt-1 text-zinc-500">Timing <strong className="float-right text-zinc-950">{formatBehindAhead(state.view.behindAheadMs)}</strong></span>
+
+              <div className="flex w-[300px] shrink-0 flex-col rounded-xl border border-zinc-200 bg-white p-4 text-xs">
+                {live ? (
+                  <>
+                    <strong className="text-base leading-tight">{view.current?.title}</strong>
+                    {view.current?.note ? <span className="mt-1 rounded-md bg-zinc-100 px-2 py-1 text-zinc-700">{view.current.note}</span> : null}
+                    <span className="mt-2 text-zinc-500">
+                      {currentRow?.actualStart ? `Started ${formatClock(currentRow.actualStart)} · ` : ""}{view.current?.minutes} min planned
+                    </span>
+                    {overrun ? (
+                      <span className="mt-1 font-semibold text-red-700 dark:text-red-400">Over by {formatStageTime(view.timeLeftMs).replace("+", "")} · was due {formatClock(dueEnd)}</span>
+                    ) : (
+                      <span className="mt-1 text-zinc-500">{view.paused ? "Paused" : `Ends at ${formatClock(dueEnd)}`}</span>
+                    )}
+                    <div className="my-3 h-px bg-zinc-100" />
+                    <span className="flex justify-between text-zinc-500">Planned finish <strong className="text-zinc-950">{formatClock(view.plannedFinish)}</strong></span>
+                    <span className="mt-1 flex justify-between text-zinc-500">
+                      Projected finish
+                      <strong className={behind ? "text-amber-700 dark:text-amber-400" : "text-zinc-950"}>{formatClock(view.projectedFinish)}</strong>
+                    </span>
+                  </>
+                ) : view.status === "waiting" ? (
+                  <>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-sky-700 dark:text-sky-400">Auto-start is on</span>
+                    <strong className="mt-1 text-base leading-snug">Nothing to do. The timer starts itself at {firstRow ? formatClock(firstRow.scheduledStart) : state.plan.startTime}.</strong>
+                    <span className="mt-1 text-zinc-500">It begins with {firstRow?.item.title ?? "the first item"}. Leave this window open.</span>
+                    <div className="mt-auto grid gap-2 pt-3">
+                      <Button onClick={() => startFor(state)}><Play className="size-4" /> Start now</Button>
+                      <Button onClick={() => setStartDialog("choose")}>Start from another item</Button>
+                      <Button variant="ghost" onClick={() => send({ type: "skipAutoStartToday" })}>Turn off auto-start today</Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{view.status === "finished" ? "Service ended" : "Not running"}</span>
+                    <strong className="mt-1 text-base leading-snug">
+                      {view.status === "finished"
+                        ? "The service has finished."
+                        : state.now < plannedStartOf(state)
+                          ? `${state.plan.name} is planned for ${formatClock(plannedStartOf(state))}.`
+                          : `${state.plan.name} was planned for ${formatClock(plannedStartOf(state))}.`}
+                    </strong>
+                    <span className="mt-1 text-zinc-500">
+                      {state.plan.autoStart ? "Auto-start is off for today." : "Auto-start is off for this plan, so press Start when you're ready."}
+                    </span>
+                    <div className="mt-auto grid gap-2 pt-3">
+                      <Button variant="default" onClick={() => startFor(state)}><Play className="size-4" /> {view.status === "finished" ? "Start again" : "Start"}</Button>
+                      <Button onClick={() => setStartDialog("choose")}>Start from another item</Button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="flex shrink-0 gap-3">
-              <Button variant="default" className="h-[60px] w-[220px] text-base font-semibold" onClick={toggleMain}>
-                {paused || waiting ? <Play className="size-5" /> : <Pause className="size-5" />}
-                {waiting ? (state.view.status === "finished" ? "Start again" : "Start now") : paused ? "Resume" : "Pause"}
+              <Button
+                className="h-[64px] w-[180px] text-base font-semibold"
+                data-tour="pause"
+                disabled={!live}
+                onClick={() => toggleRef.current(state)}
+              >
+                {view.paused ? <Play className="size-5" /> : <Pause className="size-5" />}
+                {view.paused ? "Resume" : "Pause"}
               </Button>
-              <HoldButton label="−1 min" amount={-MINUTE_MS} />
-              <HoldButton label="+1 min" amount={MINUTE_MS} />
-              <Button variant="outline" className="h-[60px] w-[76px] flex-col gap-0 text-sm font-semibold" onClick={() => setCustomAdjustOpen(true)} disabled={!active}>
+              <HoldButton label="−1 min" amount={-MINUTE_MS} disabled={!live} />
+              <HoldButton label="+1 min" amount={MINUTE_MS} disabled={!live} />
+              <Button className="h-[64px] w-[76px] flex-col gap-0 text-sm font-semibold" onClick={() => setCustomAdjustOpen(true)} disabled={!live}>
                 <span>Custom</span>
                 <span className="text-[11px] font-normal text-zinc-500">± time</span>
               </Button>
               <div className="mx-1 w-px bg-zinc-200" />
-              <Button variant="outline" className="h-[60px] min-w-[150px] flex-1 flex-col gap-0 text-base font-semibold" onClick={() => send({ type: "next" })} disabled={!active}>
-                <span className="flex items-center gap-1">Next item <ArrowRight className="size-4" /></span>
-                <span className="max-w-full truncate text-[11px] font-normal text-zinc-500">{state.view.next?.title ?? "Finish service"}</span>
+              <Button
+                variant="default"
+                data-tour="next"
+                className="h-[64px] min-w-[180px] flex-1 flex-col gap-0 text-lg font-semibold"
+                onClick={() => send({ type: "next" })}
+                disabled={!live}
+              >
+                <span className="flex items-center gap-1.5">{view.next ? "Next item" : "Finish service"} <ArrowRight className="size-5" /></span>
+                <span className="max-w-full truncate text-xs font-normal opacity-70">{live ? view.next?.title ?? "Ends the service" : "Starts when the service is running"}</span>
               </Button>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <Button size="sm" onClick={() => send({ type: "previous" })} disabled={!active}><ArrowLeft className="size-4" /> Previous</Button>
-              <Button size="sm" onClick={() => setConfirm("restart")} disabled={!active}><RotateCcw className="size-4" /> Restart item</Button>
-              <Button size="sm" onClick={() => setConfirm("stop")} disabled={!active}><Square className="size-3.5" /> Stop</Button>
-              <span className="ml-auto hidden text-[11px] text-zinc-500 xl:inline">Space start/pause · → next · +/− minute · B blackout</span>
+              <Button size="sm" onClick={() => send({ type: "previous" })} disabled={!live}><ArrowLeft className="size-4" /> Previous</Button>
+              <Button size="sm" onClick={() => setConfirm("restart")} disabled={!live}><RotateCcw className="size-4" /> Restart item</Button>
+              <Button size="sm" onClick={() => setConfirm("stop")} disabled={!live}><Square className="size-3.5" /> Stop</Button>
+              <div className="mx-1 h-6 w-px bg-zinc-200" />
+              <Button
+                size="sm"
+                data-tour="blackout"
+                aria-pressed={view.blackout}
+                variant={view.blackout ? "default" : "outline"}
+                onClick={() => send({ type: "blackout", on: !view.blackout })}
+              >
+                <EyeOff className="size-4" /> {view.blackout ? "Show timer" : "Blackout"}
+              </Button>
+              <span className="ml-auto hidden text-[11px] text-zinc-500 xl:inline">→ next · Space pause · +/− minute · B blackout · ? help</span>
             </div>
 
-            <section className="min-h-0 shrink-0 rounded-xl border border-zinc-200 bg-white p-3">
+            <section className="shrink-0 rounded-xl border border-zinc-200 bg-white p-3" data-tour="message">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold">Message to stage</h2>
-                <div className="flex items-center gap-4 text-xs text-zinc-600">
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <Switch checked={flash} onCheckedChange={setFlash} aria-label="Flash stage message" /> Flash
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <Switch
-                      checked={state.view.blackout}
-                      onCheckedChange={(on) => send({ type: "blackout", on })}
-                      aria-label="Blackout stage"
-                    />
-                    Blackout stage
-                  </label>
-                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
+                  <Switch checked={flash} onCheckedChange={setFlash} aria-label="Flash stage message" /> Flash
+                </label>
               </div>
               <div className="mt-2 flex items-center gap-2">
-                <ToggleGroup type="single" value={state.view.message?.text ?? ""} className="flex shrink-0 gap-2">
+                <ToggleGroup type="single" value={view.message?.text ?? ""} className="flex shrink-0 gap-2">
                   {["Please wrap up", "5 minutes", "2 minutes", "Time for altar call"].map((preset) => (
                     <ToggleGroupItem key={preset} value={preset} onClick={() => showMessage(preset)}>{preset}</ToggleGroupItem>
                   ))}
@@ -1042,40 +608,42 @@ function ControlApp() {
                   placeholder="Custom message…"
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") showMessage(message);
-                  }}
+                  onKeyDown={(event) => { if (event.key === "Enter") showMessage(message); }}
                 />
                 <Button size="sm" variant="default" onClick={() => showMessage(message)}>Show</Button>
-                <Button size="sm" disabled={!state.view.message} onClick={() => send({ type: "clearMessage" })}>Clear</Button>
+                <Button size="sm" disabled={!view.message} onClick={() => send({ type: "clearMessage" })}>Clear</Button>
               </div>
             </section>
 
             {state.display.mode === "single-monitor" && state.display.banner ? (
-              <div className="shrink-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="shrink-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
                 {state.display.banner}
               </div>
             ) : null}
           </section>
 
-          <aside className="flex w-[400px] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white">
-            <div className="flex items-center justify-between px-4 pb-2 pt-3">
+          <aside className="flex w-[410px] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white" data-tour="schedule">
+            <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
               <div>
                 <h2 className="text-sm font-semibold">Schedule</h2>
-                <p className="mt-0.5 text-[11px] text-zinc-500">{state.view.scheduleRows.length} items · finishes {formatClock(state.view.projectedFinish)}</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">{view.scheduleRows.length} items · finishes {formatClock(view.projectedFinish)}</p>
               </div>
-              <Button size="sm" onClick={() => setPlansOpen(true)}>Edit plan</Button>
+              <div className="flex gap-2">
+                {view.hasRunChanges ? <Button size="sm" onClick={saveRunToPlan}>Save to plan</Button> : null}
+                <Button size="sm" onClick={() => setPlansOpen(true)}>Edit plan</Button>
+              </div>
             </div>
-            <div className="grid grid-cols-[44px_44px_1fr_auto] gap-2 px-4 pb-1 text-[10px] font-semibold tracking-wider text-zinc-500">
-              <span>PLAN</span><span>ACTUAL</span><span>ITEM</span><span>STATUS</span>
+            <div className="grid grid-cols-[20px_40px_40px_1fr_auto] gap-2 px-4 pb-1 text-[10px] font-semibold tracking-wider text-zinc-500">
+              <span /><span>PLAN</span><span>ACTUAL</span><span>ITEM</span><span />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
-              {state.view.scheduleRows.map((row) => {
-                const upcoming = row.status === "upcoming" && active;
+              {view.scheduleRows.map((row) => {
+                const upcoming = row.status === "upcoming" && live;
+                const current = row.status === "current";
                 return (
                   <div
                     key={row.item.id}
-                    draggable={Boolean(upcoming)}
+                    draggable={upcoming}
                     tabIndex={upcoming ? 0 : -1}
                     onDragStart={(event) => event.dataTransfer.setData("text/plain", String(row.index))}
                     onDragOver={(event) => upcoming && event.preventDefault()}
@@ -1086,53 +654,51 @@ function ControlApp() {
                     }}
                     onKeyDown={(event) => {
                       if (!event.altKey) return;
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        reorder({ type: "moveUp", index: row.index }, "Item moved up");
-                      } else if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        reorder({ type: "moveDown", index: row.index }, "Item moved down");
-                      }
+                      if (event.key === "ArrowUp") { event.preventDefault(); reorder({ type: "moveUp", index: row.index }, "Item moved up"); }
+                      if (event.key === "ArrowDown") { event.preventDefault(); reorder({ type: "moveDown", index: row.index }, "Item moved down"); }
                     }}
-                    className={`grid min-h-11 grid-cols-[20px_44px_44px_1fr_auto] items-center gap-2 rounded-lg px-2 py-1.5 text-xs ${
-                      row.status === "current" && active ? "bg-zinc-100 font-medium" : "text-zinc-600"
+                    className={`grid min-h-12 grid-cols-[20px_40px_40px_1fr_auto] items-center gap-2 rounded-lg px-2 py-1.5 text-xs ${
+                      current ? "bg-zinc-100 font-semibold" : row.status === "done" ? "text-zinc-400" : "text-zinc-700"
                     }`}
                   >
                     <span>{upcoming ? <GripVertical className="size-4 cursor-grab text-zinc-400" /> : null}</span>
                     <span className="tabular-nums">{formatClock(row.scheduledStart)}</span>
                     <span className="tabular-nums text-zinc-500">{row.actualStart ? formatClock(row.actualStart) : ""}</span>
-                    <span className="min-w-0 truncate" title={row.item.title}>
-                      {row.item.title}
-                      {upcoming ? <span className="ml-1 text-zinc-400">· {row.item.minutes} min</span> : null}
+                    <span className="min-w-0">
+                      <span className={`block truncate ${row.skipped ? "line-through" : ""}`} title={row.item.title}>{row.item.title}</span>
+                      <span className="block font-normal text-zinc-500">{row.item.minutes} min</span>
                     </span>
-                    {upcoming ? (
-                      <span className="flex items-center gap-0.5">
-                        <Tooltip label="Move up"><Button aria-label={`Move ${row.item.title} up`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "moveUp", index: row.index }, "Item moved up")}><ArrowUp className="size-3.5" /></Button></Tooltip>
-                        <Tooltip label="Move down"><Button aria-label={`Move ${row.item.title} down`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "moveDown", index: row.index }, "Item moved down")}><ArrowDown className="size-3.5" /></Button></Tooltip>
-                        <Tooltip label="Do next"><Button aria-label={`Do ${row.item.title} next`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "doNext", index: row.index }, "Item moved next")}><span className="text-[10px] font-semibold">Next</span></Button></Tooltip>
+                    {row.status === "upcoming" && !live ? <span /> : upcoming ? (
+                      <span className="flex items-center gap-1">
+                        <Tooltip label="Move up"><Button aria-label={`Move ${row.item.title} up`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveUp", index: row.index }, "Item moved up")}><ArrowUp className="size-4" /></Button></Tooltip>
+                        <Tooltip label="Move down"><Button aria-label={`Move ${row.item.title} down`} variant="ghost" size="icon" className="size-8" onClick={() => reorder({ type: "moveDown", index: row.index }, "Item moved down")}><ArrowDown className="size-4" /></Button></Tooltip>
+                        <Button aria-label={`Do ${row.item.title} next`} size="sm" className="h-8 px-2" onClick={() => reorder({ type: "doNext", index: row.index }, `${row.item.title} is next`)}>Do next</Button>
                       </span>
                     ) : (
-                      <Badge className="h-5 px-1.5 text-[10px]">{row.status === "current" && active ? "Current" : row.status === "done" ? <><Check className="mr-1 size-3" /> Done</> : `${row.item.minutes} min`}</Badge>
+                      <Badge className={`h-6 px-2 text-[11px] ${current && overrun ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : current ? "border-zinc-950 bg-zinc-950 text-zinc-50" : ""}`}>
+                        {current ? (overrun ? "Time up" : view.paused ? "Paused" : "Now") : row.skipped ? "Skipped" : row.status === "done" ? <><Check className="mr-1 size-3" /> Done</> : `${row.item.minutes} min`}
+                      </Badge>
                     )}
                   </div>
                 );
               })}
             </div>
             <div className="border-t border-zinc-100 p-3">
-              <Button className="w-full border-dashed" disabled={!active} onClick={() => setAddItemOpen(true)}><Plus className="size-4" /> Add item after current</Button>
-              <p className="mt-2 text-[10px] text-zinc-500">Upcoming items can be dragged or moved with Alt+↑ and Alt+↓.</p>
+              <Button className="h-10 w-full border-dashed" disabled={!live} onClick={() => setAddItemOpen(true)} data-tour="add-item"><Plus className="size-4" /> Add item after current</Button>
+              <p className="mt-2 text-[10px] text-zinc-500">Drag upcoming items, or move them with Alt+↑ and Alt+↓.</p>
             </div>
           </aside>
         </div>
       </main>
 
       <ConfirmDialog action={confirm} onClose={() => setConfirm(null)} />
-      <LateStartDialog state={state} open={lateStartOpen} onOpenChange={setLateStartOpen} />
+      <StartDialog state={state} open={startDialog !== null} mode={startDialog ?? "late"} onOpenChange={(open) => !open && setStartDialog(null)} />
       <AddItemDialog open={addItemOpen} onOpenChange={setAddItemOpen} />
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
       <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} />
-      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <Toaster />
+      <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
+      <Walkthrough open={walkthroughOpen} onClose={closeWalkthrough} />
+      <Toaster theme={theme} />
     </TooltipProvider>
   );
 }

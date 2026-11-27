@@ -27,6 +27,31 @@ input {
   font: inherit;
 }
 
+/*
+ * Dark theme for the control window. Tailwind v4 colours are CSS variables, so the
+ * grey scale (and white) is inverted here and every zinc/white utility follows.
+ * Tinted colours use dark: variants where they appear. The stage keeps its own colours.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+.dark {
+  color-scheme: dark;
+  color: #fafafa;
+  background: #09090b;
+  --color-white: #131316;
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #1f1f24;
+  --color-zinc-200: #2d2d33;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #71717a;
+  --color-zinc-500: #a1a1aa;
+  --color-zinc-600: #c4c4cc;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f4f4f5;
+  --color-zinc-950: #fafafa;
+}
+
 .condensed {
   font-family: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   font-stretch: condensed;
@@ -34,6 +59,11 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Stage display ----------
+ * Bands stacked top to bottom: title, paused, digits, message, next. Nothing overlaps.
+ * The digits are measured and fitted to the space left (see useFitText), so any
+ * format (12:36, 1:05:00, +12:40) fits. All text scales with the screen.
+ */
 .stage-view {
   container-type: size;
   position: relative;
@@ -43,13 +73,17 @@ input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 1.2cqh;
+  padding: 2.5cqh 3cqw;
   background: #0a0a0a;
   color: #fafafa;
 }
 
 .stage-view[data-over="true"] {
   background: #d00000;
+}
+
+.stage-view[data-over="true"][data-pulse="true"] {
   animation: overrun-pulse 2.4s ease-in-out infinite;
 }
 
@@ -58,130 +92,125 @@ input {
   animation: none;
 }
 
-.stage-view[data-over="true"][data-pulse="false"] {
-  animation: none;
-}
-
-.stage-view[data-over="true"][data-time-up-style="digits"] .stage-digits {
-  color: #d00000;
-}
-
 .stage-view[data-blackout="true"] {
   background: #000;
-  color: #000;
+}
+
+.stage-top {
+  flex: none;
+  min-height: 8cqh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stage-clock {
   position: absolute;
-  top: 3.5cqh;
-  right: 3.5cqw;
-  z-index: 3;
-  font-size: clamp(12px, 3.8cqh, 42px);
+  top: 2.5cqh;
+  right: 3cqw;
+  height: 8cqh;
+  display: flex;
+  align-items: center;
+  font-size: 5cqh;
+  font-weight: 600;
   line-height: 1;
   color: #d4d4d8;
   font-variant-numeric: tabular-nums;
 }
 
+.stage-view[data-over="true"] .stage-clock {
+  color: #fee2e2;
+}
+
 .stage-title {
-  position: absolute;
-  top: 6cqh;
-  z-index: 2;
-  max-width: 88cqw;
+  max-width: 72cqw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(14px, 4.2cqh, 42px);
-  line-height: 1.1;
-  font-weight: 650;
+  font-size: 5.2cqh;
+  line-height: 1.15;
+  font-weight: 700;
   color: #e4e4e7;
-  border-radius: .55rem;
-  padding: .4cqh 1.2cqw;
-  background: rgb(10 10 10 / 82%);
-  text-shadow: 0 2px 8px rgb(0 0 0 / 90%);
 }
 
-.stage-title[data-over="true"] {
-  position: static;
-  max-width: 94cqw;
-  color: #fee2e2;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 8.9cqh;
+.stage-view[data-over="true"] .stage-title {
+  max-width: 76cqw;
+  font-size: 5.6cqh;
   font-weight: 800;
-  letter-spacing: .16em;
-  line-height: 1;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-shadow: none;
+  letter-spacing: .06em;
+  color: #fee2e2;
+  text-align: center;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.stage-digits {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-47%) scaleX(.78);
-  transform-origin: center;
-  max-width: 94cqw;
-  font-size: min(110cqh, 72cqw);
-  line-height: 1;
-  letter-spacing: -.045em;
+.stage-paused {
+  flex: none;
+  padding: .6cqh 2.4cqw;
+  border-radius: 1cqh;
+  background: #fbbf24;
+  color: #0a0a0a;
+  font-size: 5.5cqh;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.stage-digits-box {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage-digits,
+.stage-measure {
+  line-height: .82;
+  letter-spacing: -.02em;
   white-space: nowrap;
 }
 
-.stage-digits[data-long="true"] {
-  font-size: min(100cqh, 58cqw);
+.stage-digits {
+  font-size: var(--fit-size, 40cqh);
 }
 
-.stage-view[data-over="true"] .stage-digits {
-  position: static;
-  max-width: none;
-  transform: none;
-  font-size: min(72.2cqh, 42cqw);
+.stage-digits[data-paused="true"] {
+  opacity: .55;
+}
+
+.stage-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  font-size: 100px;
+}
+
+.stage-view[data-over="true"] .stage-digits,
+.stage-view[data-over="true"] .stage-measure {
   font-style: italic;
-  font-weight: 700;
-  line-height: .86;
-  letter-spacing: -.015em;
 }
 
-.stage-view[data-over="true"] .stage-clock {
-  top: 2.8cqh;
-  right: 2.5cqw;
-  color: #fee2e2;
-  font-size: 6.1cqh;
-  font-weight: 600;
+.stage-view[data-over="true"][data-time-up-style="digits"] .stage-digits {
+  color: #ff3b3b;
 }
-
 
 .stage-digits[data-warning="true"] {
   color: #fbbf24;
 }
 
-.stage-next {
-  position: absolute;
-  bottom: 2.5cqh;
-  z-index: 2;
-  max-width: 90cqw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: clamp(12px, 3cqh, 28px);
+.stage-digits[data-clock="true"] {
   color: #d4d4d8;
-  font-weight: 600;
-  border-radius: .45rem;
-  padding: .35cqh 1cqw;
-  background: rgb(10 10 10 / 84%);
-  text-shadow: 0 2px 8px rgb(0 0 0 / 70%);
 }
 
-/*
- * Stage message (FR-5). It sits in the layout below the digits and never on top of
- * them: while a message shows, the digits leave their oversized overlay position and
- * shrink to make room (still at least 60% of the height, AC-13). Text scales with the
- * screen and is capped at two lines; long messages use slightly smaller text.
- */
 .stage-message {
-  z-index: 3;
+  flex: none;
   max-width: 90cqw;
-  margin-top: 1cqh;
   padding: 1.2cqh 2.6cqw;
   border-radius: 1.4cqh;
   background: white;
@@ -197,20 +226,6 @@ input {
   overflow: hidden;
 }
 
-.stage-view[data-message="true"]:not([data-over="true"]) .stage-digits {
-  position: static;
-  transform: scaleX(.78);
-  font-size: min(61cqh, 60cqw);
-}
-
-.stage-view[data-message="true"]:not([data-over="true"]) .stage-digits[data-long="true"] {
-  font-size: min(50cqh, 46cqw);
-}
-
-.stage-view[data-over="true"][data-message="true"] .stage-digits {
-  font-size: min(54cqh, 38cqw);
-}
-
 .stage-message[data-long="true"] {
   font-size: 4.5cqh;
 }
@@ -223,12 +238,20 @@ input {
   animation: message-flash 1s ease-in-out infinite;
 }
 
-.stage-paused {
-  position: absolute;
-  top: 4cqh;
-  left: 3cqw;
-  font-size: clamp(11px, 2.2cqh, 22px);
-  letter-spacing: .12em;
+.stage-next {
+  flex: none;
+  max-width: 90cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 4.4cqh;
+  line-height: 1.2;
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+.stage-view[data-over="true"] .stage-next {
+  color: #fee2e2;
 }
 
 @keyframes overrun-pulse {
