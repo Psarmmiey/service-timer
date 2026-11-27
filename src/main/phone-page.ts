@@ -21,6 +21,9 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   button:disabled { opacity:.35; }
   .primary { background:var(--text); color:var(--bg); border-color:var(--text); }
   .danger { color:#fca5a5; }
+  /* Colour only for states that need noticing: amber while paused, red while the stage is blacked out. */
+  .attention { background:var(--amber); color:#0a0a0a; border-color:var(--amber); font-weight:700; }
+  .alert { background:var(--red); color:#fff; border-color:var(--red); font-weight:700; }
   .hidden { display:none !important; }
   header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
   header .plan { font-weight:700; font-size:15px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -31,7 +34,12 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   .timer { border-radius:20px; background:#0a0a0a; border:1px solid var(--line); padding:14px 14px 16px; text-align:center; }
   .timer.over { background:var(--red); border-color:var(--red); }
   .timer .title { font-weight:700; font-size:17px; color:#e4e4e7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .timer.over .title { color:#fee2e2; letter-spacing:.04em; }
+  .timer.over .title { color:#fee2e2; letter-spacing:.06em; text-transform:uppercase; font-size:14px; }
+  .sign { display:inline-block; margin:10px 0 4px; padding:6px 18px 4px; border:3px solid #fff; border-radius:12px; background:#fff; color:var(--red); font-weight:900; font-size:clamp(40px, 13vw, 64px); line-height:1; letter-spacing:.03em; }
+  .sign.flash { animation: sign-flash 1.2s steps(1, end) infinite; }
+  @keyframes sign-flash { 0% { background:#fff; color:var(--red); } 50% { background:transparent; color:#fff; } }
+  @media (prefers-reduced-motion: reduce) { .sign.flash { animation:none; } }
+  .overword { font-size:.36em; margin-left:.12em; color:#fecaca; letter-spacing:.04em; }
   .digits { font-weight:800; font-variant-numeric: tabular-nums; font-size: clamp(64px, 24vw, 120px); line-height:1; margin:6px 0 4px; letter-spacing:-.02em; }
   .digits.warning { color:var(--amber); } .digits.danger { color:#ff3b3b; } .digits.paused { opacity:.55; }
   .timer .next { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -61,7 +69,43 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   .login p { color:var(--muted); margin:0 0 18px; font-size:15px; }
   .login input { width:100%; text-align:center; font-size:40px; letter-spacing:.5em; padding:10px 0 10px .5em; border-radius:16px; border:1px solid var(--line); background:var(--card); font-variant-numeric: tabular-nums; }
   .login button { width:100%; margin-top:12px; }
+  .login label { display:block; text-align:left; color:var(--muted); font-size:14px; margin:14px 2px 6px; }
+  .login input#name { font-size:18px; letter-spacing:normal; text-align:left; padding:12px 14px; }
   .error { color:#fca5a5; min-height:20px; margin-top:10px; font-size:14px; }
+  .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:4px; margin-bottom:12px; }
+  .tabs button { min-height:40px; border:0; border-radius:10px; background:transparent; color:var(--muted); font-size:15px; }
+  .tabs button[aria-selected="true"] { background:var(--text); color:var(--bg); }
+  .mini { display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:14px; padding:8px 12px; margin-bottom:10px; background:#0a0a0a; }
+  .mini.over { background:var(--red); border-color:var(--red); }
+  .mini .t { flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mini .d { font-weight:800; font-size:26px; font-variant-numeric:tabular-nums; }
+  .undo { display:flex; align-items:center; gap:10px; background:#1e293b; border:1px solid #334155; border-radius:12px; padding:6px 6px 6px 12px; margin-bottom:10px; font-size:14px; }
+  .undo span { flex:1; } .undo button { min-height:38px; }
+  .note { color:var(--muted); font-size:13px; margin:0 2px 10px; }
+  .rows { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
+  .row { min-width:0; border:1px solid var(--line); background:var(--card); border-radius:14px; padding:10px 12px; }
+  .row.current { border-color:var(--text); }
+  .row.done { opacity:.55; }
+  .row .top { display:flex; align-items:center; gap:10px; }
+  .row .time { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; width:44px; flex:none; }
+  .row .name { flex:1; min-width:0; }
+  .row .name b { display:block; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row.skipped .name b { text-decoration:line-through; }
+  .row .name small { color:var(--muted); font-size:13px; }
+  .row .tag { flex:none; font-size:12px; font-weight:700; border-radius:999px; padding:3px 9px; background:#27272a; color:#d4d4d8; }
+  .row .tag.now { background:var(--text); color:var(--bg); } .row .tag.over { background:#450a0a; color:#fca5a5; }
+  .row .acts { display:grid; grid-template-columns:44px 44px minmax(0,1fr) minmax(0,1fr) 44px; gap:6px; margin-top:8px; }
+  .row .acts button { min-height:42px; font-size:14px; padding:0 4px; white-space:nowrap; }
+  .row .acts button.confirming { background:var(--text); color:var(--bg); border-color:var(--text); }
+  .editor { margin-top:8px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+  .editor .row2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .editor .row2 button { padding:0 8px; font-size:15px; }
+  .stepper { display:grid; grid-template-columns:56px minmax(0,1fr) 56px; gap:6px; align-items:center; }
+  .stepper output { text-align:center; font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .add { display:grid; gap:8px; margin-top:12px; }
+  .add input { border:1px solid var(--line); background:var(--card); border-radius:14px; padding:0 14px; min-height:48px; font-size:16px; }
+  .add .two { display:grid; grid-template-columns:1fr 110px; gap:8px; }
+  .finish { text-align:center; color:var(--muted); font-size:13px; margin-top:10px; }
   .toast { position:fixed; left:50%; bottom:max(16px, env(safe-area-inset-bottom)); transform:translateX(-50%); background:#27272a; border:1px solid var(--line); padding:10px 14px; border-radius:12px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; }
   .toast.show { opacity:1; }
 </style>
@@ -69,8 +113,11 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 <body>
 <div id="login" class="login hidden">
   <h1>Service Timer</h1>
-  <p>Enter the 4-digit PIN shown on the timer laptop under Settings, Phone control.</p>
+  <p>Enter your name and the 4-digit PIN shown on the timer laptop under Settings, Phone control.</p>
   <form id="login-form">
+    <label for="name">Your name (shown on the laptop)</label>
+    <input id="name" maxlength="40" autocomplete="name" placeholder="For example, Tolu" required>
+    <label for="pin">PIN</label>
     <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" required>
     <button class="primary" type="submit">Connect</button>
   </form>
@@ -83,9 +130,29 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     <span class="pill" id="status-pill">Connecting</span>
     <span class="clock" id="clock">--:--</span>
   </header>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-timer" aria-selected="true">Timer</button>
+    <button role="tab" id="tab-order" aria-selected="false">Running order</button>
+  </nav>
+
+  <div id="order-view" class="hidden">
+    <div class="mini" id="mini"><span class="t" id="mini-title"></span><span class="d" id="mini-digits"></span></div>
+    <div class="undo hidden" id="undo-bar"><span>Changed for today.</span><button id="undo-btn" class="primary">Undo</button></div>
+    <p class="note" id="order-note"></p>
+    <div class="rows" id="rows"></div>
+    <form class="add hidden" id="add-form">
+      <h2 style="margin:4px 2px 0">Add after the current item</h2>
+      <input id="add-title" maxlength="80" placeholder="For example, Testimony" aria-label="New item title">
+      <div class="two"><input id="add-minutes" type="number" inputmode="decimal" min="0.5" max="240" step="0.5" value="5" aria-label="Minutes"><button type="submit" class="primary">Add</button></div>
+    </form>
+    <div class="finish" id="order-finish"></div>
+  </div>
+
+  <div id="timer-view">
 
   <div class="timer" id="timer" aria-live="polite">
     <div class="title" id="title"></div>
+    <div class="sign hidden" id="sign">TIME UP</div>
     <div class="digits" id="digits">--:--</div>
     <div class="next" id="next-line"></div>
     <div class="badge hidden" id="paused-badge">PAUSED</div>
@@ -125,6 +192,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     </div>
     <label class="toggle"><input type="checkbox" id="flash"> Flash the message</label>
   </section>
+  </div>
   <div class="status" id="conn">Connecting…</div>
 </main>
 <div class="toast" id="toast"></div>
@@ -133,22 +201,25 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
 (function () {
   var PRESETS = ["Please wrap up", "5 minutes", "2 minutes", "Time for altar call"];
   var state = null, source = null, lastStatus = null, lastItem = null;
+  var tab = localStorage.getItem("st-tab") || "timer", editing = -1, editMinutes = 0, rowsKey = "", confirming = -1, confirmTimer = 0;
   var $ = function (id) { return document.getElementById(id); };
+  var myName = "";
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function clock(ms) { var d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
-  function stageTime(ms, sign) {
-    var over = ms <= 0, total = Math.floor(Math.abs(ms) / 1000);
+  function stageTime(ms) {
+    var total = Math.floor(Math.abs(ms) / 1000);
     var h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
-    var v = h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
-    return over ? (sign === "minus" ? "-" : "+") + v : v;
+    return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
   }
   function toast(text) { var t = $("toast"); t.textContent = text; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 1600); }
 
   function showLogin(message) {
     if (source) { source.close(); source = null; }
     $("app").classList.add("hidden"); $("login").classList.remove("hidden");
-    $("login-error").textContent = message || ""; $("pin").value = ""; $("pin").focus();
+    $("login-error").textContent = message || ""; $("pin").value = "";
+    $("name").value = $("name").value || localStorage.getItem("st-name") || "";
+    ($("name").value ? $("pin") : $("name")).focus();
   }
 
   function command(body, label) {
@@ -173,15 +244,26 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     var timer = $("timer"), digits = $("digits");
     timer.classList.toggle("over", s.status === "overrun" && !s.blackout);
     digits.className = "digits " + (s.colourBand === "warning" ? "warning" : s.colourBand === "danger" ? "danger" : "") + (s.paused ? " paused" : "");
+    var over = s.status === "overrun";
+    var sign = $("sign");
+    sign.classList.toggle("hidden", !over || s.blackout);
+    sign.classList.toggle("flash", s.flashTimeUp !== false);
     if (s.blackout) {
       $("title").textContent = "Stage is blacked out";
-      digits.textContent = live ? stageTime(s.timeLeftMs, s.overtimeSign) : clock(s.now);
+      digits.textContent = live ? stageTime(s.timeLeftMs) : clock(s.now);
+    } else if (over) {
+      // Same as the stage: TIME UP sign, then "1:36 OVER" (no plus sign).
+      $("title").textContent = s.current ? s.current.title : "";
+      digits.innerHTML = "";
+      digits.appendChild(document.createTextNode(stageTime(s.timeLeftMs)));
+      var word = document.createElement("span"); word.className = "overword"; word.textContent = "OVER";
+      digits.appendChild(word);
     } else if (live) {
-      $("title").textContent = s.status === "overrun" ? "TIME UP · " + (s.current ? s.current.title.toUpperCase() : "") : (s.current ? s.current.title : "");
-      digits.textContent = stageTime(s.timeLeftMs, s.overtimeSign);
+      $("title").textContent = s.current ? (s.uppercase ? s.current.title.toUpperCase() : s.current.title) : "";
+      digits.textContent = stageTime(s.timeLeftMs);
     } else if (s.status === "waiting" && s.untilStartMs > 0) {
       $("title").textContent = s.planName + " starts in";
-      digits.textContent = stageTime(s.untilStartMs, s.overtimeSign);
+      digits.textContent = stageTime(s.untilStartMs);
     } else {
       $("title").textContent = s.status === "finished" ? "Service ended" : s.planName + " · " + clock(s.plannedStart);
       digits.textContent = clock(s.now);
@@ -199,6 +281,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     $("next-btn-sub").textContent = s.next ? s.next.title : "Ends the service";
     $("next-btn").firstChild.textContent = s.next ? "Next item " : "Finish service ";
     $("pause-btn").textContent = s.paused ? "Resume" : "Pause";
+    $("pause-btn").classList.toggle("attention", Boolean(s.paused));
 
     if (!live) {
       $("late-btns").classList.toggle("hidden", !s.late);
@@ -212,19 +295,108 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     var msg = s.message ? s.message.text : "";
     Array.prototype.forEach.call(document.querySelectorAll("#chips button"), function (b) { b.classList.toggle("on", b.textContent === msg); });
     $("clear-btn").disabled = !msg;
-    $("blackout-btn").textContent = s.blackout ? "Show the timer" : "Blackout stage";
-    $("blackout-btn").classList.toggle("primary", s.blackout);
+    var bo = $("blackout-btn");
+    if (bo.dataset.on !== String(Boolean(s.blackout))) {
+      bo.dataset.on = String(Boolean(s.blackout));
+      bo.textContent = s.blackout ? "Stage blacked out" : "Blackout stage";
+      if (s.blackout) { var hint = document.createElement("small"); hint.textContent = "Tap to show the timer"; hint.style.cssText = "display:block;font-weight:500;font-size:13px;opacity:.9"; bo.appendChild(hint); }
+    }
+    $("blackout-btn").classList.toggle("alert", Boolean(s.blackout));
 
+    renderOrder(s);
     var itemKey = s.current ? s.current.title : "";
     if (s.status === "overrun" && lastStatus === "running" && itemKey === lastItem && navigator.vibrate) navigator.vibrate([200, 100, 200]);
     lastStatus = s.paused ? "paused" : s.status; lastItem = itemKey;
+  }
+
+  function showTab(next) {
+    tab = next; localStorage.setItem("st-tab", next);
+    $("tab-timer").setAttribute("aria-selected", String(next === "timer"));
+    $("tab-order").setAttribute("aria-selected", String(next === "order"));
+    $("timer-view").classList.toggle("hidden", next !== "timer");
+    $("order-view").classList.toggle("hidden", next !== "order");
+  }
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function btn(text, onClick, cls, label) { var b = el("button", cls || "", text); b.type = "button"; if (label) b.setAttribute("aria-label", label); b.onclick = onClick; return b; }
+  function fmtMin(m) { return (Math.round(m * 2) / 2) + " min"; }
+
+  function renderOrder(s) {
+    var over = s.status === "overrun";
+    $("mini").classList.toggle("over", over);
+    $("mini-title").textContent = s.current && (s.live) ? (over ? "TIME UP · " : "") + s.current.title : s.planName;
+    $("mini-digits").textContent = s.live ? stageTime(s.timeLeftMs) + (over ? " over" : "") : clock(s.now);
+    $("undo-bar").classList.toggle("hidden", !s.undoAvailable);
+    $("order-note").textContent = !s.live
+      ? "You can move, change or add items once the service is running."
+      : s.hasRunChanges ? "Changes are for today only. To keep them, press Save to plan on the laptop." : "Changes here are for today only.";
+    $("add-form").classList.toggle("hidden", !s.live);
+    $("order-finish").textContent = "Planned finish " + clock(s.plannedFinish) + " · projected " + clock(s.projectedFinish);
+
+    var key = JSON.stringify([s.live, s.status, editing, editMinutes, confirming, s.rows.map(function (r) { return [r.title, r.minutes, r.status, r.skipped, r.actualStart, r.scheduledStart]; })]);
+    if (key === rowsKey) return;
+    rowsKey = key;
+    var list = $("rows"); list.innerHTML = "";
+    s.rows.forEach(function (r) {
+      var upcoming = s.live && r.status === "upcoming";
+      var row = el("div", "row" + (r.status === "current" ? " current" : "") + (r.status === "done" ? " done" : "") + (r.skipped ? " skipped" : ""));
+      var top = el("div", "top");
+      top.appendChild(el("span", "time", clock(r.actualStart || r.scheduledStart)));
+      var name = el("div", "name"); name.appendChild(el("b", "", r.title)); name.appendChild(el("small", "", fmtMin(r.minutes)));
+      top.appendChild(name);
+      if (r.status === "current" && s.live) top.appendChild(el("span", "tag " + (over ? "over" : "now"), over ? "Time up" : s.paused ? "Paused" : "Now"));
+      else if (r.skipped) top.appendChild(el("span", "tag", "Skipped"));
+      else if (r.status === "done") top.appendChild(el("span", "tag", "Done"));
+      row.appendChild(top);
+      if (upcoming) {
+        var acts = el("div", "acts");
+        acts.appendChild(btn("↑", function () { command({ type: "moveUp", index: r.index }); }, "", "Move " + r.title + " up"));
+        acts.appendChild(btn("↓", function () { command({ type: "moveDown", index: r.index }); }, "", "Move " + r.title + " down"));
+        acts.appendChild(btn("Do next", function () { command({ type: "doNext", index: r.index }, r.title + " is next"); }, "", "Do " + r.title + " next"));
+        // Start now jumps the stage straight away, so it takes a second tap to confirm.
+        var start = btn(confirming === r.index ? "Tap again" : "Start now", function () {
+          if (confirming === r.index) {
+            confirming = -1; clearTimeout(confirmTimer);
+            command({ type: "startNow", index: r.index }, r.title + " started");
+            return;
+          }
+          confirming = r.index; rowsKey = ""; renderOrder(state);
+          clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirming = -1; rowsKey = ""; if (state) renderOrder(state); }, 4000);
+        }, confirming === r.index ? "confirming" : "", "Start " + r.title + " now");
+        acts.appendChild(start);
+        acts.appendChild(btn(editing === r.index ? "×" : "✎", function () {
+          editing = editing === r.index ? -1 : r.index; editMinutes = r.minutes; rowsKey = ""; renderOrder(state);
+        }, "", (editing === r.index ? "Close editing " : "Edit ") + r.title));
+        row.appendChild(acts);
+        if (editing === r.index) {
+          var ed = el("div", "editor");
+          var step = el("div", "stepper");
+          var out = el("output", "", fmtMin(editMinutes));
+          step.appendChild(btn("−", function () { editMinutes = Math.max(0.5, editMinutes - 1); out.textContent = fmtMin(editMinutes); }, "", "One minute less"));
+          step.appendChild(out);
+          step.appendChild(btn("+", function () { editMinutes = Math.min(600, editMinutes + 1); out.textContent = fmtMin(editMinutes); }, "", "One minute more"));
+          ed.appendChild(step);
+          var two = el("div", "grid row2");
+          two.appendChild(btn("Remove from today", function () { editing = -1; command({ type: "removeUpcoming", index: r.index }, "Removed for today"); }, "danger"));
+          two.appendChild(btn("Save minutes", function () { editing = -1; command({ type: "setRunItemMinutes", index: r.index, minutes: editMinutes }, "Changed for today"); }, "primary"));
+          ed.appendChild(two);
+          row.appendChild(ed);
+        }
+      }
+      list.appendChild(row);
+    });
   }
 
   function connect() {
     $("login").classList.add("hidden"); $("app").classList.remove("hidden");
     if (source) source.close();
     source = new EventSource("/api/events");
-    source.onopen = function () { $("conn").textContent = "Live"; $("conn").className = "status"; };
+    source.onopen = function () { $("conn").textContent = "Live" + (myName ? " · signed in as " + myName : ""); $("conn").className = "status"; };
+    source.addEventListener("signed-out", function (e) {
+      var reason = ""; try { reason = JSON.parse(e.data).reason; } catch (err) {}
+      showLogin(reason === "disconnected" ? "The timer laptop disconnected this phone." : reason === "pin-changed" ? "The PIN was changed on the timer laptop. Enter the new one." : "Please sign in again.");
+    });
     source.onmessage = function (e) { try { render(JSON.parse(e.data)); } catch (err) {} };
     source.onerror = function () {
       $("conn").textContent = "Reconnecting…"; $("conn").className = "status bad";
@@ -244,6 +416,17 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     if (t.dataset.adjust) command({ type: "adjust", ms: Number(t.dataset.adjust) });
     if (t.dataset.choice) command({ type: "startChoice", mode: t.dataset.choice });
   });
+  $("tab-timer").onclick = function () { showTab("timer"); };
+  $("tab-order").onclick = function () { showTab("order"); };
+  showTab(tab);
+  $("undo-btn").onclick = function () { command({ type: "undoReorder" }, "Undone"); };
+  $("add-form").onsubmit = function (e) {
+    e.preventDefault();
+    var title = $("add-title").value.trim(), minutes = Number($("add-minutes").value);
+    if (!title || !(minutes >= 0.5)) { toast("Add a title and minutes"); return; }
+    command({ type: "insertAfterCurrent", item: { id: "phone-" + Date.now(), title: title, minutes: minutes } }, title + " added");
+    $("add-title").value = "";
+  };
   $("pause-btn").onclick = function () { if (state) command({ type: state.paused ? "resume" : "pause" }); };
   $("start-btn").onclick = function () { command({ type: "start" }); };
   $("clear-btn").onclick = function () { command({ type: "clearMessage" }, "Message cleared"); };
@@ -254,12 +437,17 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   };
   $("login-form").onsubmit = function (e) {
     e.preventDefault();
-    fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Timer": "1" }, body: JSON.stringify({ pin: $("pin").value }) })
+    var name = $("name").value.trim();
+    if (!name) { $("login-error").textContent = "Add your name so the laptop can see who is connected."; $("name").focus(); return; }
+    fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Timer": "1" }, body: JSON.stringify({ pin: $("pin").value, name: name }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (res) { if (res.ok) connect(); else { $("login-error").textContent = res.j.error || "Couldn't sign in"; $("pin").value = ""; } })
+      .then(function (res) {
+        if (res.ok) { myName = name; localStorage.setItem("st-name", name); connect(); }
+        else { $("login-error").textContent = res.j.error || "Couldn't sign in"; $("pin").value = ""; }
+      })
       .catch(function () { $("login-error").textContent = "Can't reach the timer laptop."; });
   };
-  fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { if (j.signedIn) connect(); else showLogin(); }).catch(function () { showLogin("Can't reach the timer laptop."); });
+  fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { if (j.signedIn) { myName = j.name || ""; connect(); } else showLogin(); }).catch(function () { showLogin("Can't reach the timer laptop."); });
 })();
 </script>
 </body>

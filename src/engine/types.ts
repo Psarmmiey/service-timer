@@ -45,6 +45,10 @@ export type RunState = {
   bannerAction?: "fromTop";
   /** Ids of items added for this run only (FR-14), kept when the saved plan is edited. */
   runOnlyIds?: string[];
+  /** Items removed from this run only; they stay out when the saved plan is edited. */
+  runRemovedIds?: string[];
+  /** Minutes changed for this run only, by item id; kept when the saved plan is edited. */
+  runMinutes?: Record<string, number>;
 };
 
 export type ReorderUndo = {

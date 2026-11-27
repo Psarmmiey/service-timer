@@ -82,12 +82,13 @@ describe("electron milestone 3 UI", () => {
     }
     await controlWindow.waitForSelector("button:has-text('Pause')");
     await stageWindow.waitForSelector('[aria-label="Stage display"]');
-    expect(await stageWindow.locator("body").innerText()).toContain("Welcome and opening prayer");
+    // Item names show in capitals on the stage by default.
+    expect(await stageWindow.locator("body").innerText()).toContain("WELCOME AND OPENING PRAYER");
 
     await controlWindow.getByText("Please wrap up", { exact: true }).click();
     await stageWindow.waitForSelector(".stage-message:has-text('Please wrap up')");
 
-    const blackout = controlWindow.getByRole("button", { name: /^(Blackout|Show timer)$/ });
+    const blackout = controlWindow.getByRole("button", { name: /^(Blackout|Stage blacked out\. Show the timer)$/ });
     await blackout.click();
     await stageWindow.waitForSelector('[aria-label="Stage is blacked out"]');
     await blackout.click();
@@ -127,9 +128,12 @@ describe("electron milestone 3 UI", () => {
     for (let index = 0; index < 4; index += 1) await controlWindow.keyboard.press("-");
     expect(await stageWindow.locator(".stage-digits").getAttribute("data-warning")).toBe("true");
     for (let index = 0; index < 2; index += 1) await controlWindow.keyboard.press("-");
-    await stageWindow.waitForSelector(".stage-title:has-text('TIME UP · WELCOME AND OPENING PRAYER')");
+    await stageWindow.waitForSelector(".timeup-sign:has-text('TIME UP')");
+    expect(await stageWindow.locator(".stage-item").textContent()).toBe("Welcome and opening prayer");
+    expect(await stageWindow.locator(".stage-view").getAttribute("data-flash-time-up")).toBe("true");
     expect(await stageWindow.locator(".stage-view").getAttribute("data-over")).toBe("true");
-    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\+\d+:\d{2}$/);
+    // Over time reads "1:36 OVER", never "+1:36", which people took for time added.
+    expect(await stageWindow.locator(".stage-digits").innerText()).toMatch(/^\d+:\d{2}\s*OVER$/);
     await stageWindow.setViewportSize({ width: 1920, height: 1080 });
     const screenshotDir = process.env.COPILOT_ARTIFACTS_DIR ?? "/tmp/service-timer-screenshots";
     await mkdir(screenshotDir, { recursive: true });

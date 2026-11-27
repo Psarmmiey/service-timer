@@ -1,6 +1,7 @@
 import { Bell, HelpCircle, Monitor, Moon, Power, RefreshCw, Smartphone, Sun } from "lucide-react";
-import { useState } from "react";
-import type { AppState, Settings } from "../../shared/ipc";
+import { useEffect, useState } from "react";
+import type { AppState, PhoneInfo, Settings } from "../../shared/ipc";
+import { formatClock } from "../shared/format";
 import {
   Button,
   Dialog,
@@ -19,7 +20,40 @@ import {
 import { playChime } from "./chime";
 import { send } from "./common";
 
-type Section = "stage" | "alerts" | "phone" | "appearance" | "startup" | "updates" | "help";
+export type Section = "stage" | "alerts" | "phone" | "appearance" | "startup" | "updates" | "help";
+
+/** One signed-in phone, with an inline check before disconnecting it. */
+function PhoneRow({ phone, now }: { phone: PhoneInfo; now: number }) {
+  const [confirming, setConfirming] = useState(false);
+  const away = Math.max(0, Math.round((now - phone.lastSeenAt) / 60_000));
+  return (
+    <li className="rounded-lg border border-zinc-200 px-3 py-2.5" data-phone={phone.name}>
+      <div className="flex items-center gap-3">
+        <span className={`size-2.5 shrink-0 rounded-full ${phone.connected ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{phone.name}</div>
+          <div className="truncate text-xs text-zinc-500">
+            {phone.device} · {phone.address} · {phone.connected ? `connected since ${formatClock(phone.signedInAt)}` : `not connected${away ? `, last seen ${away} min ago` : ""}`}
+          </div>
+          {phone.lastAction ? <div className="truncate text-xs text-zinc-500">Last: {phone.lastAction.label} at {formatClock(phone.lastAction.at)}</div> : null}
+        </div>
+        {confirming ? null : <Button size="sm" variant="outline" aria-label={`Disconnect ${phone.name}`} onClick={() => setConfirming(true)}>Disconnect</Button>}
+      </div>
+      {confirming ? (
+        <div className="mt-2 rounded-md bg-zinc-50 p-2.5 text-xs dark:bg-zinc-900">
+          <p className="text-zinc-600 dark:text-zinc-400">
+            Disconnect {phone.name}? They can sign back in with the current PIN unless you change it. A new PIN signs every phone out, so others will need it too.
+          </p>
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button size="sm" variant="outline" onClick={() => send({ type: "disconnectPhone", id: phone.id })}>Disconnect</Button>
+            <Button size="sm" variant="destructive" onClick={() => send({ type: "disconnectPhone", id: phone.id, newPin: true })}>Disconnect and change PIN</Button>
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
 
 const SECTIONS: { id: Section; label: string; icon: typeof Monitor }[] = [
   { id: "stage", label: "Stage display", icon: Monitor },
@@ -59,13 +93,26 @@ export function SettingsDialog({
   open,
   onOpenChange,
   onReplayWalkthrough,
+  startSection,
 }: {
   state: AppState;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onReplayWalkthrough: () => void;
+  /** Open on this section, for example from the phones badge in the header. */
+  startSection?: Section;
 }) {
   const [section, setSection] = useState<Section>("stage");
+  useEffect(() => {
+    if (!open || !startSection) return;
+    setSection(startSection);
+    // From the header's phones button, go straight to the list.
+    if (startSection === "phone") {
+      const timer = setTimeout(() => document.querySelector('[aria-label="Signed-in phones"]')?.scrollIntoView({ block: "start", behavior: "smooth" }), 120);
+      return () => clearTimeout(timer);
+    }
+  }, [open, startSection]);
+  const phones = state.web.phones ?? [];
   const update = (patch: Partial<Settings>) => send({ type: "saveSettings", settings: { ...state.settings, ...patch } });
   const settings = state.settings;
   const isMac = navigator.userAgent.includes("Mac");
@@ -108,6 +155,9 @@ export function SettingsDialog({
                   </SelectContent>
                 </Select>
               </Row>
+              <Row title="Item names in capitals" hint="For example SERMON instead of Sermon, so names read well from a distance.">
+                <Switch aria-label="Item names in capitals" checked={settings.itemNamesUppercase !== false} onCheckedChange={(itemNamesUppercase) => update({ itemNamesUppercase })} />
+              </Row>
               <Row title="Which screen is which?" hint="Shows a big number on every screen for a few seconds.">
                 <Button onClick={() => send({ type: "identifyDisplays" })}>Identify screens</Button>
               </Row>
@@ -122,11 +172,8 @@ export function SettingsDialog({
                   <ToggleGroupItem value="digits" className="h-9">Red digits only</ToggleGroupItem>
                 </ToggleGroup>
               </Row>
-              <Row title="Pulse slowly at time up" hint="Turn off for anyone sensitive to flashing.">
-                <Switch aria-label="Pulse slowly at time up" checked={settings.pulse} onCheckedChange={(pulse) => update({ pulse })} />
-              </Row>
-              <Row title="Flash at 0:00" hint="Three quick flashes when time runs out, then steady.">
-                <Switch aria-label="Flash at 0:00" checked={settings.flashAtZero !== false} onCheckedChange={(flashAtZero) => update({ flashAtZero })} />
+              <Row title="Flash TIME UP" hint="The TIME UP sign flashes while the item is over time. Turn off for anyone sensitive to flashing.">
+                <Switch aria-label="Flash TIME UP" checked={settings.flashTimeUp !== false} onCheckedChange={(flashTimeUp) => update({ flashTimeUp })} />
               </Row>
               <Row title="Turn amber when" hint="Items can override this in the plan editor.">
                 <Select value={String(settings.warnAtSeconds ?? 120)} onValueChange={(value) => update({ warnAtSeconds: Number(value) })}>
@@ -144,12 +191,6 @@ export function SettingsDialog({
                     {[15, 30, 60].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 60 ? `${seconds} s left` : "1 min left"}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </Row>
-              <Row title="Show overtime as" hint="Ontime and ProPresenter use a minus sign.">
-                <ToggleGroup type="single" value={settings.overtimeSign ?? "plus"} onValueChange={(value) => value && update({ overtimeSign: value as Settings["overtimeSign"] })} className="flex gap-1" aria-label="Show overtime as">
-                  <ToggleGroupItem value="plus" className="h-9 tabular-nums">+1:30</ToggleGroupItem>
-                  <ToggleGroupItem value="minus" className="h-9 tabular-nums">−1:30</ToggleGroupItem>
-                </ToggleGroup>
               </Row>
               <Row title="Chime on this laptop" hint="Only this laptop plays it, never the stage, so the room doesn't hear it.">
                 <div className="flex items-center gap-2">
@@ -169,7 +210,7 @@ export function SettingsDialog({
           {section === "phone" ? (
             <>
               <h2 className="text-base font-semibold">Phone control</h2>
-              <Row title="Let phones control the timer" hint="Phones on the same Wi-Fi can use Next, Pause, ±1 min, messages and blackout. They can't change plans or settings.">
+              <Row title="Let phones control the timer" hint="Phones on the same Wi-Fi can use Next, Pause, ±1 min, messages, blackout and today's running order. They can't change plans or settings.">
                 <Switch aria-label="Let phones control the timer" checked={Boolean(settings.phoneControl)} onCheckedChange={(phoneControl) => update({ phoneControl })} />
               </Row>
               {settings.phoneControl ? (
@@ -193,9 +234,22 @@ export function SettingsDialog({
                       <p className="mt-3 text-xs text-zinc-500">If Windows asks whether Service Timer may use the network, choose Allow on private networks.</p>
                     </div>
                   </div>
-                ) : (
-                  <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">{state.web.error ?? "Starting phone control…"}</p>
-                )
+                ) : null
+              ) : null}
+              {settings.phoneControl && state.web.running ? (
+                <section className="mt-6" aria-label="Signed-in phones">
+                  <h3 className="text-sm font-semibold">Signed-in phones</h3>
+                  {phones.length ? (
+                    <ul className="mt-2 grid gap-2">
+                      {phones.map((phone) => <PhoneRow key={phone.id} phone={phone} now={state.now} />)}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs text-zinc-500">No phones yet. Each person enters their name when they sign in, so you can see who is connected here.</p>
+                  )}
+                </section>
+              ) : null}
+              {settings.phoneControl && !state.web.running ? (
+                <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">{state.web.error ?? "Starting phone control…"}</p>
               ) : null}
             </>
           ) : null}

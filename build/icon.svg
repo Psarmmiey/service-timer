@@ -1,0 +1,11 @@
+<!-- Service Timer logo: a stopwatch on the app's dark background; the red wedge is time running down. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#27272a"/><stop offset="1" stop-color="#09090b"/></linearGradient></defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="452" y="150" width="120" height="70" rx="22" fill="#fafafa"/>
+  <rect x="488" y="200" width="48" height="60" fill="#fafafa"/>
+  <circle cx="512" cy="560" r="300" fill="none" stroke="#fafafa" stroke-width="64"/>
+  <path d="M512 560 L512 300 A260 260 0 0 1 737.2 690 Z" fill="#ef2b2b"/>
+  <line x1="512" y1="560" x2="512" y2="330" stroke="#fafafa" stroke-width="44" stroke-linecap="round"/>
+  <circle cx="512" cy="560" r="40" fill="#fafafa"/>
+</svg>

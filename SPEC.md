@@ -422,5 +422,43 @@ service-timer/
 - **Next is the primary action (27 Nov 2026):** Next item is the dominant dark button on the control window; Pause is a large secondary button beside it. This replaces the mockup's Pause-first layout.
 - **Dark theme (27 Nov 2026):** the control window has System, Light and Dark themes (Settings, Appearance). The stage is always dark.
 - **Walkthrough (27 Nov 2026):** a short guided tour of the control window opens on first run (never during a service) and can be replayed from the ? button, the ? key or Settings, Help.
-- **Time up alerts (27 Nov 2026):** three quick flashes at 0:00 (on by default), red digits in the last 30 seconds before 0:00 (Off, 15 s, 30 s or 1 min), overtime shown as +1:30 or -1:30, and a chime on the control laptop only, never the stage (Off, at time up, or at amber and time up). Based on how Ontime, Stagetimer.io and ProPresenter handle time up.
+- **Time up screen (27 Nov 2026, from user testing):** a tester read "+1:36" as time added, so time up now shows the item name, a large white TIME UP sign, and the overtime as "1:36 OVER" with no plus sign (design concept C). The sign flashes, swapping solid and outline so it stays readable; Settings, "Flash TIME UP" turns it off (on by default; reduced motion also stops it). Red digits show in the last 30 seconds before 0:00 (Off, 15 s, 30 s or 1 min), and a chime plays on the control laptop only, never the stage (Off, at time up, or at amber and time up). This replaces the earlier pulse, flash at 0:00 and +/- options. Applies to the stage, the laptop preview and the phone page.
 - **Phone control is in version 1 (27 Nov 2026):** FR-22 is built. It is off by default (Settings, Phone control). When on, the app serves a phone page on the local network on port 4280 (or the next free port), shown with a QR code and a 4-digit PIN. Phones can use Start, Next, Pause/Resume, ±1 min, Previous, stage messages and blackout, and never plans or settings. Five wrong PINs a minute per device are allowed; New PIN signs every phone out.
+
+### Decision: item names in capitals on the stage (27 Nov 2026)
+
+Item names on the stage (current item, Next, First) show in capitals by default so they read well from the back of the hall. Settings has a switch, "Item names in capitals", to turn it off. Plans keep the names as typed; only the stage display changes. The phone timer card follows the same setting.
+
+### Decision: running order on the phone (27 Nov 2026)
+
+The phone page has a second tab, Running order, showing today's items with times and Now/Done/Skipped. While the service is running, upcoming items can be moved up or down, made next, given more or fewer minutes, or removed, and a new item can be added after the current one. Every change is for today only, with a 10 second Undo, as on the laptop. Phones still cannot change saved plans or settings; to keep a change, someone presses Save to plan on the laptop. Save to plan only shows when today's order really differs from the plan (an undone change does not count).
+
+### Decision: Do next versus Start now (27 Nov 2026)
+
+Do next queues an item straight after the current one; the current item carries on. Start now goes to the item straight away: the current item ends, the chosen item starts with its full time, and the items it jumped over stay in the order for later (they are not marked skipped). Because Start now changes the stage at once, the laptop asks for confirmation and the phone needs a second tap within 4 seconds. There is no Undo for Start now; Previous goes back if it was a mistake.
+
+### Decision: seeing and disconnecting phones (27 Nov 2026)
+
+Each person enters their name when signing in on a phone (remembered on that phone). The laptop shows a toast when a phone connects ("Ada connected from a phone", with the device and network address), and the phones button in the header opens Settings, Phone control, at a list of signed-in phones: name, device and browser, address, connected or last seen, and their last action (for example "Next at 10:42"). Any phone can be disconnected from that list. Its page returns to sign-in with "The timer laptop disconnected this phone." Because a disconnected phone could sign back in with the PIN, the same check offers "Disconnect and change PIN", which signs every phone out. Names are self-reported, so the device and address are shown alongside to spot a stranger.
+
+### Decision: colour only for states (27 Nov 2026)
+
+Buttons stay black and white. Colour is kept for states that need noticing, with one meaning each: green for running or connected, amber for paused, behind or warning, red for time up, blackout and destructive actions. So while paused, the Pause button becomes an amber Resume (laptop and phone, and the Paused tag in the schedule); while the stage is blacked out, the Blackout button turns red and reads "Blacked out · Show timer" (phone: "Stage blacked out / Tap to show the timer"), matching a red badge in the header.
+
+### Decision: importing running orders (27 Nov 2026)
+
+The church shares the order of service on WhatsApp, so the plan editor has "Paste running order". It reads the message as sent: the date line, numbered items with "start - end" times in any common style (11 - 11.05am, 11.30am - 11.35am, 12.30pm, 1pm, 12 noon, 18:00), or plain "Title 5" lists. Names of who leads each item, in brackets or stars, are left out. Minutes come from each item's own times. Mistakes are fixed where the intent is clear and always listed under "Please check" before saving: a wrong am/pm, a start time that is clearly a typo (12.02pm after an item ending 1.02pm), overlaps, gaps with nothing listed, skipped or repeated numbering, and when the back-to-back finish differs from the written one. The result becomes a one-off plan for the date in the message (named, for example, "Sunday service, 15 Nov"), which runs instead of the recurring plan that day, or replaces the items of the plan being edited, with Undo.
+
+Import also takes a `.csv` with an Item column and either Minutes or Start and End (other columns, such as the leader, are ignored), and Service Timer `.json` files: one exported plan, or a "Back up all plans" file with every plan. Imported plans never overwrite; a name already in use gets a number, such as "Sunday service (2)".
+
+### Fix: Set as active plan shows the plan straight away (27 Nov 2026)
+
+Picking a plan with "Set as active plan" while nothing is running now shows it on the schedule at once, including after a service has ended (before, the finished plan stayed and the choice seemed to do nothing), and it beats the automatic choice of today's plan until tomorrow. A picked plan never starts by surprise: it waits to start automatically only if it is scheduled later today; otherwise it sits ready for Start.
+
+### Decision: logo, menu bar and installer (27 Nov 2026)
+
+Logo: a white stopwatch on the app's dark rounded square, with a red wedge for time running down, matching the app's black, white and red. Sources are `build/icon.svg` and `build/tray-template.svg`; `npm run icons` renders the Windows `.ico` (16 to 256 px), the Mac `.icns`, the Windows tray `.ico` and the Mac menu bar template images. The old SVG tray icon is gone (Windows can't show SVG in the tray).
+
+Menu bar: File (Plans, Paste Running Order, Import, Back Up All Plans), Edit, Timer (Start/Pause/Resume, Next, Previous, ±1 minute, message, Blackout, Restart, Stop), View (stage screen, Which Screen Is Which, theme, zoom, full screen) and Help (walkthrough, shortcuts, phone control, guide, report a problem, updates, About); a Mac gets its usual app and Window menus. Only Ctrl/⌘ shortcuts are registered with the menu; single keys are shown in labels and handled by the window, so they never fire while typing. Release builds never show Reload or developer tools. On Windows the menu bar stays visible on the control window (the layout still fits a 1366x768 laptop); the stage never has one.
+
+Installer: one-click, per user, no administrator; logo on the installer and uninstaller; Start menu and desktop shortcuts; opens when done; plans and settings are kept on uninstall.

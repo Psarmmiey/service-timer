@@ -24,6 +24,8 @@ const buttonVariants = cva(
         outline: "bg-white",
         ghost: "border-transparent bg-transparent hover:bg-zinc-100",
         destructive: "border-red-700 bg-red-700 text-[#fff] hover:bg-red-800",
+        // Something needs attention, such as a paused timer. Fixed colours so both themes match.
+        attention: "border-amber-400 bg-amber-400 text-[#18181b] hover:border-amber-300 hover:bg-amber-300",
       },
       size: {
         default: "h-9",
