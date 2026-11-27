@@ -6,7 +6,6 @@ import {
   Check,
   Clock3,
   GripVertical,
-  MoreVertical,
   Pause,
   Play,
   Plus,
@@ -114,6 +113,58 @@ function normaliseImportedPlan(value: unknown): Plan | null {
 
 function send(command: TimerCommand) {
   window.api.send(command);
+}
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function planWhenLabel(plan: Plan): string {
+  if (plan.kind === "oneOff" && plan.date) {
+    const [year, month, day] = plan.date.split("-").map(Number);
+    const date = new Date(year!, month! - 1, day!);
+    return `${DAY_NAMES[date.getDay()]} ${day} ${date.toLocaleString("en-GB", { month: "short" })} ${plan.startTime}`;
+  }
+  const days = [...plan.days].sort((a, b) => a - b).map((day) => DAY_NAMES[day]).join(", ");
+  return `${days || "No days"} ${plan.startTime}`;
+}
+
+function plannedStartOf(state: AppState): number {
+  return state.view.scheduleRows[0]?.scheduledStart ?? state.now;
+}
+
+/** More than a minute after the planned start, Start must go through the late start prompt (FR-16). */
+function isLateStart(state: AppState): boolean {
+  return state.now - plannedStartOf(state) > 60_000;
+}
+
+/** Minutes field that only commits a valid value on blur or Enter, never a half-typed one. */
+function MinutesInput({ value, onCommit, label }: { value: number; onCommit: (minutes: number) => void; label: string }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const minutes = Number(text);
+    if (Number.isFinite(minutes) && minutes >= 0.5 && minutes <= 600) {
+      const rounded = Math.round(minutes * 2) / 2;
+      if (rounded !== value) onCommit(rounded);
+      setText(String(rounded));
+    } else {
+      setText(String(value));
+    }
+  };
+  return (
+    <Input
+      aria-label={label}
+      type="number"
+      min="0.5"
+      step="0.5"
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+        if (event.key === "Escape") setText(String(value));
+      }}
+    />
+  );
 }
 
 function HoldButton({
@@ -245,9 +296,19 @@ function LateStartDialog({
 }) {
   const [choice, setChoice] = useState<"catchUp" | "fromTop" | "fromItem">("catchUp");
   const [itemIndex, setItemIndex] = useState("0");
-  const plannedStart = state.view.scheduleRows[0]?.scheduledStart ?? state.now;
+  const plannedStart = plannedStartOf(state);
   const lateMs = Math.max(0, state.now - plannedStart);
-  const finish = state.view.projectedFinish + (choice === "fromTop" ? lateMs : 0);
+  const planEnded = state.now >= state.view.plannedFinish;
+  useEffect(() => {
+    if (!open) return;
+    setChoice(planEnded ? "fromTop" : "catchUp");
+    setItemIndex("0");
+    // Reset each time the prompt opens so last week's choice is never preselected.
+  }, [open]);
+  const minutesFrom = (index: number) => state.plan.items.slice(index).reduce((sum, item) => sum + item.minutes, 0) * MINUTE_MS;
+  const finish = choice === "catchUp"
+    ? state.view.plannedFinish
+    : state.now + minutesFrom(choice === "fromTop" ? 0 : Number(itemIndex));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,10 +324,14 @@ function LateStartDialog({
           className="mt-5 grid gap-2"
           aria-label="Late start choice"
         >
-          <ToggleGroupItem value="catchUp" className="h-auto w-full justify-start p-3 text-left">
+          <ToggleGroupItem value="catchUp" disabled={planEnded} className="h-auto w-full justify-start p-3 text-left">
             <span>
               <span className="block text-sm font-semibold">Catch up to the clock <Badge className="ml-2">Recommended</Badge></span>
-              <span className="mt-1 block text-xs font-normal text-zinc-500">Jump to the item that should be running now and mark earlier items skipped.</span>
+              <span className="mt-1 block text-xs font-normal text-zinc-500">
+                {planEnded
+                  ? `Today's plan ended at ${formatClock(state.view.plannedFinish)}, so there is nothing to catch up to.`
+                  : "Jump to the item that should be running now and mark earlier items skipped."}
+              </span>
             </span>
           </ToggleGroupItem>
           <ToggleGroupItem value="fromTop" className="h-auto w-full justify-start p-3 text-left">
@@ -380,15 +445,20 @@ function PlanEditorDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>(state.plans);
+  // The plan being edited. This is not the active plan: only "Set as active plan" changes that.
   const [activeId, setActiveId] = useState(state.activePlanId);
   const [draft, setDraft] = useState<Plan | null>(null);
+  const activePlanId = state.activePlanId;
+  const live = state.view.status === "running" || state.view.status === "overrun" || state.view.paused;
+  const runningPlanId = live ? state.plan.id : null;
+  const plansKey = JSON.stringify(state.plans);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraftSave = useRef<{ plans: Plan[]; activePlanId: string } | null>(null);
 
+  // Only resync when the saved plans really change, not on every 250 ms state broadcast.
   useEffect(() => {
     setPlans(state.plans);
-    setActiveId(state.activePlanId);
-  }, [state.plans, state.activePlanId]);
+  }, [plansKey]);
 
   useEffect(() => {
     if (!draft) setDraft(plans.find((plan) => plan.id === activeId) ?? plans[0] ?? null);
@@ -398,7 +468,7 @@ function PlanEditorDialog({
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
   }, []);
 
-  const save = (next: Plan[], nextActiveId = activeId) => {
+  const save = (next: Plan[], nextActiveId = activePlanId) => {
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
     draftSaveTimer.current = null;
     pendingDraftSave.current = null;
@@ -421,7 +491,7 @@ function PlanEditorDialog({
     setDraft(next);
     const nextPlans = plans.map((plan) => plan.id === next.id ? next : plan);
     setPlans(nextPlans);
-    pendingDraftSave.current = { plans: nextPlans, activePlanId: activeId };
+    pendingDraftSave.current = { plans: nextPlans, activePlanId };
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
     draftSaveTimer.current = setTimeout(flushDraftSave, 400);
   };
@@ -452,7 +522,19 @@ function PlanEditorDialog({
     updateDraft({ items });
     toast.success("Item deleted", {
       duration: 10_000,
-      action: { label: "Undo", onClick: () => updateDraft({ items: [...items.slice(0, index), removed, ...items.slice(index)] }) },
+      action: {
+        label: "Undo",
+        onClick: () => setDraft((latest) => {
+          if (!latest || latest.items.some((item) => item.id === removed.id)) return latest;
+          const restored = { ...latest, items: [...latest.items.slice(0, index), removed, ...latest.items.slice(index)], updatedAt: new Date().toISOString() };
+          setPlans((current) => {
+            const nextPlans = current.map((plan) => plan.id === restored.id ? restored : plan);
+            send({ type: "savePlans", plans: nextPlans, activePlanId });
+            return nextPlans;
+          });
+          return restored;
+        }),
+      },
     });
   };
 
@@ -508,7 +590,7 @@ function PlanEditorDialog({
                     kind: "recurring",
                   };
                   const next = [...plans, plan];
-                  save(next, plan.id);
+                  save(next);
                   setActiveId(plan.id);
                   setDraft(plan);
                 }}
@@ -526,9 +608,13 @@ function PlanEditorDialog({
                   key={plan.id}
                   type="button"
                   className={`rounded-lg px-3 py-2 text-left ${plan.id === activeId ? "bg-zinc-100" : "hover:bg-zinc-50"}`}
-                  onClick={() => { setActiveId(plan.id); setDraft(plan); }}
+                  onClick={() => { flushDraftSave(); setActiveId(plan.id); setDraft(plan); }}
                 >
-                  <span className="block text-sm font-semibold">{plan.name}</span>
+                  <span className="block text-sm font-semibold">
+                    {plan.name}
+                    {plan.id === activePlanId ? <Badge className="ml-2 h-5 px-1.5 text-[10px]">Active</Badge> : null}
+                    {plan.id === runningPlanId ? <Badge className="ml-1 h-5 border-green-200 bg-green-50 px-1.5 text-[10px] text-green-800">Running</Badge> : null}
+                  </span>
                   <span className="text-xs text-zinc-500">{plan.kind === "recurring" ? "Recurring" : "One-off"} · {plan.startTime} · {plan.items.length} items</span>
                 </button>
               ))}
@@ -544,18 +630,29 @@ function PlanEditorDialog({
                 <Button onClick={() => {
                   const duplicate = { ...draft, id: `plan-${Date.now()}`, name: `${draft.name} copy`, items: draft.items.map((item) => ({ ...item, id: `${item.id}-${Date.now()}` })) };
                   const next = [...plans, duplicate];
-                  save(next, duplicate.id);
+                  save(next);
                   setActiveId(duplicate.id);
                   setDraft(duplicate);
                 }}>Duplicate</Button>
+                <Button
+                  disabled={draft.id === activePlanId || Boolean(runningPlanId)}
+                  title={runningPlanId ? "You can change the active plan after the service" : undefined}
+                  onClick={() => { flushDraftSave(); save(plans, draft.id); toast.success(`${draft.name} is now the active plan`); }}
+                >
+                  Set as active plan
+                </Button>
                 <Button onClick={exportJson}>Export</Button>
                 <Button
                   variant="destructive"
                   onClick={() => {
                     if (plans.length <= 1) return;
+                    if (draft.id === runningPlanId) {
+                      toast.error("This plan is running. Stop the service before deleting it.");
+                      return;
+                    }
                     const removed = draft;
                     const remaining = plans.filter((plan) => plan.id !== draft.id);
-                    const nextActiveId = remaining[0]!.id;
+                    const nextActiveId = removed.id === activePlanId ? remaining[0]!.id : activePlanId;
                     save(remaining, nextActiveId);
                     setActiveId(nextActiveId);
                     setDraft(remaining[0]!);
@@ -565,7 +662,7 @@ function PlanEditorDialog({
                         label: "Undo",
                         onClick: () => {
                           const restored = [...remaining, removed];
-                          save(restored, removed.id);
+                          save(restored, removed.id === activePlanId ? removed.id : nextActiveId);
                           setActiveId(removed.id);
                           setDraft(removed);
                         },
@@ -611,7 +708,7 @@ function PlanEditorDialog({
                 {draft.items.map((item, index) => (
                   <div key={item.id} className="grid grid-cols-[1fr_100px_44px] gap-2 rounded-lg border border-zinc-200 p-2">
                     <Input aria-label={`Item ${index + 1} title`} value={item.title} onChange={(event) => updateItem(index, { title: event.target.value })} />
-                    <Input aria-label={`Item ${index + 1} minutes`} type="number" min="0.5" step="0.5" value={item.minutes} onChange={(event) => updateItem(index, { minutes: Math.max(0.5, Number(event.target.value) || 0.5) })} />
+                    <MinutesInput label={`Item ${index + 1} minutes`} value={item.minutes} onCommit={(minutes) => updateItem(index, { minutes })} />
                     <Button aria-label={`Delete ${item.title}`} variant="ghost" onClick={() => deleteItem(index)}>×</Button>
                   </div>
                 ))}
@@ -691,26 +788,27 @@ function ControlApp() {
   useEffect(() => window.api.onState(setState), []);
 
   const active = state && ["running", "paused", "overrun"].includes(state.view.status);
-  const paused = state?.view.status === "paused";
-  const waiting = state && (state.view.status === "idle" || state.view.status === "waiting");
+  // Use the engine's paused flag: a pause during time up reports status "overrun".
+  const paused = Boolean(state?.view.paused);
+  const waiting = state && (state.view.status === "idle" || state.view.status === "waiting" || state.view.status === "finished");
 
-  const start = () => {
-    if (!state) return;
-    const plannedStart = state.view.scheduleRows[0]?.scheduledStart ?? state.now;
-    if (state.view.status === "idle" && state.now - plannedStart > 60_000) {
-      send({ type: "startChoice", mode: "fromTop" });
-    } else if (state.now - plannedStart > 60_000) {
-      setLateStartOpen(true);
-    } else {
-      send({ type: "start" });
-    }
+  const startFor = (latest: AppState) => {
+    if (isLateStart(latest)) setLateStartOpen(true);
+    else send({ type: "start" });
+  };
+
+  const toggleFor = (latest: AppState) => {
+    const status = latest.view.status;
+    if (status === "idle" || status === "waiting" || status === "finished") startFor(latest);
+    else if (latest.view.paused) send({ type: "resume" });
+    else send({ type: "pause" });
   };
 
   const toggleMain = () => {
-    if (waiting) start();
-    else if (paused) send({ type: "resume" });
-    else if (active) send({ type: "pause" });
+    if (state) toggleFor(state);
   };
+  const toggleRef = useRef(toggleFor);
+  toggleRef.current = toggleFor;
 
   const showMessage = (text: string) => {
     const value = text.trim();
@@ -719,42 +817,37 @@ function ControlApp() {
   };
 
   useEffect(() => {
+    const inDialog = () => Boolean(document.querySelector("[role='dialog'], [role='alertdialog']"));
+    const isTyping = (target: HTMLElement | null) => Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+    // Widgets that use arrow keys or Space themselves (toggle groups, selects, lists).
+    const ownsKeys = (target: HTMLElement | null) => Boolean(target?.closest("[role='radiogroup'], [role='group'], [role='tablist'], [role='listbox'], [role='menu'], [role='combobox'], [role='switch'], [role='slider']"));
+
     const onKeyDown = (event: KeyboardEvent) => {
       const latest = stateRef.current;
-      if (!latest) return;
+      if (!latest || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']")) {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          send({ type: "clearMessage" });
-        }
+      const key = event.key.toLowerCase();
+
+      if ((event.ctrlKey || event.metaKey) && key === "e") {
+        event.preventDefault();
+        setPlansOpen(true);
         return;
       }
-      if (event.ctrlKey || event.metaKey) {
-        if (event.key.toLowerCase() === "e") {
-          event.preventDefault();
-          setPlansOpen(true);
-        }
+      // Esc clears the stage message, including from the message box, but never from a dialog.
+      if (key === "escape" && isTyping(target) && !inDialog()) {
+        send({ type: "clearMessage" });
         return;
       }
-      if (event.altKey) return;
-      switch (event.key.toLowerCase()) {
+      // Shortcuts never fire while typing, inside a dialog, with modifiers or on key repeat,
+      // so holding a key can't skip several items.
+      if (isTyping(target) || inDialog() || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+      if (ownsKeys(target) && (key === " " || key.startsWith("arrow"))) return;
+
+      switch (key) {
         case " ":
+          // Space always means start/pause, even when a button has focus, and must not also click it.
           event.preventDefault();
-          if (latest.view.status === "idle" || latest.view.status === "waiting") {
-            const plannedStart = latest.view.scheduleRows[0]?.scheduledStart ?? latest.now;
-            if (latest.view.status === "idle" && latest.now - plannedStart > 60_000) {
-              send({ type: "startChoice", mode: "fromTop" });
-            } else if (latest.now - plannedStart > 60_000) {
-              setLateStartOpen(true);
-            } else {
-              send({ type: "start" });
-            }
-          } else if (latest.view.status === "paused") {
-            send({ type: "resume" });
-          } else if (["running", "paused", "overrun"].includes(latest.view.status)) {
-            send({ type: "pause" });
-          }
+          toggleRef.current(latest);
           break;
         case "arrowright":
         case "n":
@@ -790,8 +883,17 @@ function ControlApp() {
           break;
       }
     };
+    // Stop a focused button from also being clicked by the Space we handled.
+    const onKeyUp = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.key === " " && !isTyping(target) && !inDialog() && !ownsKeys(target)) event.preventDefault();
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   if (!state) {
@@ -815,8 +917,8 @@ function ControlApp() {
         <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4">
           <div className="flex items-center gap-2 text-sm font-bold"><Clock3 className="size-5" /> Service Timer</div>
           <div className="h-6 w-px bg-zinc-200" />
-          <Button size="sm" className="font-medium">{state.plan.name} · Sun {state.plan.startTime}</Button>
-          <Badge className={state.view.status === "overrun" ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-800"}>{onStatus}</Badge>
+          <Button size="sm" className="font-medium" onClick={() => setPlansOpen(true)}>{state.plan.name} · {planWhenLabel(state.plan)}</Button>
+          <Badge className={state.view.status === "overrun" ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-800"}>{onStatus.charAt(0).toUpperCase() + onStatus.slice(1)}</Badge>
           <Badge>{formatBehindAhead(state.view.behindAheadMs)}</Badge>
           <div className="flex-1" />
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
@@ -826,7 +928,13 @@ function ControlApp() {
         </header>
 
         {state.view.banner ? (
-          <div className="flex h-9 shrink-0 items-center border-b border-blue-200 bg-blue-50 px-4 text-xs text-blue-900">{state.view.banner}</div>
+          <div className="flex h-10 shrink-0 items-center gap-3 border-b border-blue-200 bg-blue-50 px-4 text-xs text-blue-900">
+            <span className="flex-1">{state.view.banner}</span>
+            {state.view.bannerAction === "fromTop" ? (
+              <Button size="sm" onClick={() => send({ type: "startChoice", mode: "fromTop" })}>Start from the top instead</Button>
+            ) : null}
+            <Button size="sm" variant="ghost" onClick={() => send({ type: "dismissBanner" })}>Dismiss</Button>
+          </div>
         ) : null}
 
         <div className="flex min-h-0 flex-1 gap-4 p-4">
@@ -855,9 +963,9 @@ function ControlApp() {
             </div>
 
             <div className="flex shrink-0 gap-3">
-              <Button variant="outline" className="h-[60px] w-[220px] text-base font-semibold" onClick={toggleMain} disabled={state.view.status === "finished"}>
+              <Button variant="default" className="h-[60px] w-[220px] text-base font-semibold" onClick={toggleMain}>
                 {paused || waiting ? <Play className="size-5" /> : <Pause className="size-5" />}
-                {waiting ? "Start now" : paused ? "Resume" : "Pause"}
+                {waiting ? (state.view.status === "finished" ? "Start again" : "Start now") : paused ? "Resume" : "Pause"}
               </Button>
               <HoldButton label="−1 min" amount={-MINUTE_MS} />
               <HoldButton label="+1 min" amount={MINUTE_MS} />
@@ -866,7 +974,7 @@ function ControlApp() {
                 <span className="text-[11px] font-normal text-zinc-500">± time</span>
               </Button>
               <div className="mx-1 w-px bg-zinc-200" />
-              <Button variant="default" className="h-[60px] min-w-[150px] flex-1 flex-col gap-0 text-base font-semibold" onClick={() => send({ type: "next" })} disabled={!active}>
+              <Button variant="outline" className="h-[60px] min-w-[150px] flex-1 flex-col gap-0 text-base font-semibold" onClick={() => send({ type: "next" })} disabled={!active}>
                 <span className="flex items-center gap-1">Next item <ArrowRight className="size-4" /></span>
                 <span className="max-w-full truncate text-[11px] font-normal text-zinc-500">{state.view.next?.title ?? "Finish service"}</span>
               </Button>
@@ -968,13 +1076,16 @@ function ControlApp() {
                   >
                     <span>{upcoming ? <GripVertical className="size-4 cursor-grab text-zinc-400" /> : null}</span>
                     <span className="tabular-nums">{formatClock(row.scheduledStart)}</span>
-                    <span className="tabular-nums text-zinc-500">{row.actualStart ? formatClock(row.actualStart) : "—"}</span>
-                    <span className="min-w-0 truncate" title={row.item.title}>{row.item.title}</span>
+                    <span className="tabular-nums text-zinc-500">{row.actualStart ? formatClock(row.actualStart) : ""}</span>
+                    <span className="min-w-0 truncate" title={row.item.title}>
+                      {row.item.title}
+                      {upcoming ? <span className="ml-1 text-zinc-400">· {row.item.minutes} min</span> : null}
+                    </span>
                     {upcoming ? (
                       <span className="flex items-center gap-0.5">
                         <Tooltip label="Move up"><Button aria-label={`Move ${row.item.title} up`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "moveUp", index: row.index }, "Item moved up")}><ArrowUp className="size-3.5" /></Button></Tooltip>
                         <Tooltip label="Move down"><Button aria-label={`Move ${row.item.title} down`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "moveDown", index: row.index }, "Item moved down")}><ArrowDown className="size-3.5" /></Button></Tooltip>
-                        <Tooltip label="Do next"><Button aria-label={`Do ${row.item.title} next`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "doNext", index: row.index }, "Item moved next")}><MoreVertical className="size-3.5" /></Button></Tooltip>
+                        <Tooltip label="Do next"><Button aria-label={`Do ${row.item.title} next`} variant="ghost" size="icon" className="size-7" onClick={() => reorder({ type: "doNext", index: row.index }, "Item moved next")}><span className="text-[10px] font-semibold">Next</span></Button></Tooltip>
                       </span>
                     ) : (
                       <Badge className="h-5 px-1.5 text-[10px]">{row.status === "current" && active ? "Current" : row.status === "done" ? <><Check className="mr-1 size-3" /> Done</> : `${row.item.minutes} min`}</Badge>
