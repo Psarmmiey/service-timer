@@ -41,6 +41,10 @@ export type RunState = {
   currentItemMinutes?: number;
   actualStarts?: Record<string, number>;
   banner?: string;
+  /** Offered next to the banner, e.g. after an automatic catch-up start. */
+  bannerAction?: "fromTop";
+  /** Ids of items added for this run only (FR-14), kept when the saved plan is edited. */
+  runOnlyIds?: string[];
 };
 
 export type ReorderUndo = {
@@ -58,6 +62,8 @@ export type ScheduleRow = {
 
 export type DerivedView = {
   status: "idle" | "waiting" | "running" | "paused" | "overrun" | "finished";
+  /** True while paused, including a pause during overrun (status is then "overrun"). */
+  paused: boolean;
   current: Item | null;
   next: Item | null;
   timeLeftMs: number;
@@ -65,7 +71,10 @@ export type DerivedView = {
   scheduleRows: ScheduleRow[];
   behindAheadMs: number;
   projectedFinish: number;
+  /** Finish time of the saved plan as planned, with no live changes. */
+  plannedFinish: number;
   message?: { text: string; flash: boolean };
   blackout: boolean;
   banner?: string;
+  bannerAction?: "fromTop";
 };
