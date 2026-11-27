@@ -43,7 +43,7 @@ export function chooseStagePlacement(displays: DisplayInfo[], preferredDisplayId
 
   return {
     mode: "stage-window",
-    preferredDisplayId: chosen.id,
+    preferredDisplayId: preferred?.id ?? preferredDisplayId ?? chosen.id,
     activeDisplayId: chosen.id,
     bounds: chosen.bounds,
   };

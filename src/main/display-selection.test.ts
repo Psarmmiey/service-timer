@@ -42,4 +42,21 @@ describe("chooseStagePlacement", () => {
     expect(returned.mode).toBe("stage-window");
     expect(returned.activeDisplayId).toBe(secondary.id);
   });
+
+  it("preserves a missing preferred display when another secondary remains", () => {
+    const third: DisplayInfo = {
+      id: 3,
+      isPrimary: false,
+      bounds: { x: 3840, y: 0, width: 1920, height: 1080 },
+    };
+
+    const fallback = chooseStagePlacement([primary, third], secondary.id);
+    expect(fallback.mode).toBe("stage-window");
+    expect(fallback.activeDisplayId).toBe(third.id);
+    expect(fallback.preferredDisplayId).toBe(secondary.id);
+
+    const returned = chooseStagePlacement([primary, secondary, third], fallback.preferredDisplayId);
+    expect(returned.mode).toBe("stage-window");
+    expect(returned.activeDisplayId).toBe(secondary.id);
+  });
 });

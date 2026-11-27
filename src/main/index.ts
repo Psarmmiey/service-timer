@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen } from "electron";
 import { join } from "node:path";
-import { createWaitingState, derive, reduce, type Plan, type RunState } from "../engine";
+import { createWaitingState, derive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { localDateString } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import type { AppState, DisplayStatus, TimerCommand } from "../shared/ipc";
@@ -18,6 +18,82 @@ const defaultPlan: Plan = {
   updatedAt: "2026-11-26T00:00:00.000Z",
   kind: "recurring",
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isInteger(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value);
+}
+
+function isItem(value: unknown): value is Item {
+  if (!isRecord(value)) return false;
+  return typeof value.id === "string"
+    && typeof value.title === "string"
+    && isFiniteNumber(value.minutes)
+    && (value.note === undefined || typeof value.note === "string")
+    && (value.warnAtSeconds === undefined || isFiniteNumber(value.warnAtSeconds));
+}
+
+function isPlan(value: unknown): value is Plan {
+  if (!isRecord(value)) return false;
+  return typeof value.id === "string"
+    && typeof value.name === "string"
+    && typeof value.startTime === "string"
+    && Array.isArray(value.days)
+    && value.days.every(isInteger)
+    && typeof value.autoStart === "boolean"
+    && (value.autoAdvanceSeconds === undefined || isFiniteNumber(value.autoAdvanceSeconds))
+    && Array.isArray(value.items)
+    && value.items.every(isItem)
+    && typeof value.updatedAt === "string"
+    && (value.kind === "recurring" || value.kind === "oneOff")
+    && (value.date === undefined || typeof value.date === "string");
+}
+
+function isTimerCommand(value: unknown): value is TimerCommand {
+  if (!isRecord(value) || typeof value.type !== "string") return false;
+  switch (value.type) {
+    case "start":
+    case "pause":
+    case "resume":
+    case "next":
+    case "previous":
+    case "restartItem":
+    case "stop":
+    case "undoReorder":
+    case "clearMessage":
+      return true;
+    case "startChoice":
+      return (value.mode === "catchUp" || value.mode === "fromTop" || value.mode === "fromItem")
+        && (value.index === undefined || isInteger(value.index));
+    case "adjust":
+      return isFiniteNumber(value.ms);
+    case "editPlan":
+      return isPlan(value.plan);
+    case "insertAfterCurrent":
+      return isItem(value.item);
+    case "reorder":
+      return isInteger(value.fromIndex) && isInteger(value.toIndex);
+    case "moveUp":
+    case "moveDown":
+    case "doNext":
+      return isInteger(value.index);
+    case "message":
+      return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
+    case "blackout":
+      return typeof value.on === "boolean";
+    case "tick":
+      return true;
+    default:
+      return false;
+  }
+}
 
 let controlWindow: BrowserWindow | null = null;
 let stageWindow: BrowserWindow | null = null;
@@ -134,7 +210,7 @@ function createControlWindow(): BrowserWindow {
     height: 700,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -166,10 +242,10 @@ function createStageWindow(): BrowserWindow {
     skipTaskbar: true,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -201,10 +277,16 @@ function startTickLoop(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.on("command", (_, command: TimerCommand) => {
-    const now = Date.now();
-    state = reduce(state, command, now, defaultPlan);
-    broadcastState(now);
+  ipcMain.on("command", (_, payload: unknown) => {
+    if (!isTimerCommand(payload)) return;
+
+    try {
+      const now = Date.now();
+      state = reduce(state, payload, now, defaultPlan);
+      broadcastState(now);
+    } catch (error) {
+      console.error("Ignoring invalid timer command", error);
+    }
   });
 }
 
