@@ -92,11 +92,9 @@ If an update fails, Service Timer keeps running the installed version and shows 
 
 ## Making a release
 
-1. Make sure `main` has everything to ship and its CI is green.
-2. Set the version in `package.json` (for example `1.0.0`), commit, then tag and push: `git tag v1.0.0 && git push origin v1.0.0`.
-3. The Release workflow builds the Windows installer and portable `.exe` and the Mac `.dmg`, and attaches them to a GitHub Release for that tag. Installed Windows copies update themselves from it.
+Raise the version in `package.json` (for example `npm version 1.0.0 --no-git-tag-version`) in the pull request. When it is merged into `main`, the Release workflow sees a version that hasn't been released, creates the `v1.0.0` tag and GitHub Release, and attaches the Windows installer and portable `.exe` and the Mac `.dmg`. Installed Windows copies update themselves from it.
 
-Every push to `main` also builds the installers as downloadable workflow artifacts, without making a release.
+A merge that keeps the same version only builds the installers as downloadable workflow artifacts, without making a release. Pushing a `v*` tag by hand also publishes a release.
 
 The logo lives in `build/icon.svg` (and `build/tray-template.svg` for the Mac menu bar). After changing either, run `npm run icons` on a Mac to regenerate every icon size.
 
