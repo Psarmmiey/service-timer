@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import type { AppState } from "../../shared/ipc";
 import {
   minutesWords,
+  overallWords,
   clock12,
   duration,
-  finishLine,
   longDate,
   signedDuration,
   startLine,
@@ -30,10 +30,10 @@ const START_WORDS: Record<ReportSummary["startMode"], string> = {
 function overBadge(entry: Pick<ReportListEntry, "overMs" | "endedAt">) {
   if (entry.endedAt === undefined || entry.overMs === undefined) return <Badge className="h-5 border-green-200 bg-green-50 px-1.5 text-[10px] text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300">Running</Badge>;
   const over = entry.overMs;
-  if (Math.abs(over) < 60_000) return <Badge className="h-5 px-1.5 text-[10px]">On time</Badge>;
+  if (Math.abs(over) < 60_000) return <Badge className="h-5 shrink-0 whitespace-nowrap px-1.5 text-[10px]">On time</Badge>;
   return over > 0
-    ? <Badge className="h-5 shrink-0 whitespace-nowrap border-red-200 bg-red-50 px-1.5 text-[10px] text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{minutesWords(over)} over</Badge>
-    : <Badge className="h-5 shrink-0 whitespace-nowrap border-green-200 bg-green-50 px-1.5 text-[10px] text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300">{minutesWords(over)} early</Badge>;
+    ? <Badge className="h-5 shrink-0 whitespace-nowrap border-red-200 bg-red-50 px-1.5 text-[10px] text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{overallWords(over)}</Badge>
+    : <Badge className="h-5 shrink-0 whitespace-nowrap border-green-200 bg-green-50 px-1.5 text-[10px] text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300">{overallWords(over)}</Badge>;
 }
 
 /** "Sun 29 Nov", with the year only when it isn't this year. */
@@ -132,9 +132,9 @@ export function ReportsDialog({ state, open, onOpenChange, openId }: { state: Ap
                   <div className="rounded-lg border border-zinc-200 p-3">
                     <div className="text-xs text-zinc-500">Against the plan</div>
                     <div className={`text-xl font-semibold tabular-nums ${summary.overMs !== undefined && summary.overMs >= 60_000 ? "text-red-700 dark:text-red-400" : ""}`}>
-                      {summary.overMs === undefined ? "Still running" : signedDuration(summary.overMs)}
+                      {summary.overMs === undefined ? "Still running" : overallWords(summary.overMs)}
                     </div>
-                    <div className="text-xs text-zinc-500">{finishLine(summary).replace(/^Finished \S+ /, "").replace(/[()]/g, "")}</div>
+                    <div className="text-xs text-zinc-500">Planned finish {clock12(summary.plannedFinish)}</div>
                   </div>
                 </div>
 

@@ -188,6 +188,12 @@ export function longDate(runDate: string): string {
   return `${WEEKDAYS[date.getDay()]} ${day} ${MONTHS[month! - 1]} ${year}`;
 }
 
+/** "13 min over", "5 min early", "On time": in words, so it can't be read as a clock time. */
+export function overallWords(overMs: number): string {
+  if (Math.abs(overMs) < 60_000) return "On time";
+  return `${minutesWords(overMs)} ${overMs > 0 ? "over" : "early"}`;
+}
+
 export function startLine(summary: ReportSummary): string {
   const late = summary.lateMs;
   const when = Math.abs(late) < 60_000 ? "on time" : late > 0 ? `${minutesWords(late)} late` : `${minutesWords(late)} early`;
@@ -276,7 +282,7 @@ export function toHtml(summary: ReportSummary): string {
 <h1>${escapeHtml(summary.title)}</h1><p class="date">${escapeHtml(longDate(summary.date))}</p>
 <div class="facts"><div>Started<b>${clock12(summary.startedAt)}</b>${escapeHtml(startLine(summary).replace(/^Started \S+ /, ""))}</div>
 <div>Finished<b>${summary.endedAt ? clock12(summary.endedAt) : "still running"}</b>${summary.endedAt ? `planned ${clock12(summary.plannedFinish)}` : ""}</div>
-<div>Overall<b>${summary.overMs === undefined ? "" : signedDuration(summary.overMs)}</b>against the plan</div></div>
+<div>Overall<b class="${summary.overMs !== undefined && summary.overMs >= 60_000 ? "over" : ""}">${summary.overMs === undefined ? "Still running" : overallWords(summary.overMs)}</b>against the planned finish</div></div>
 <table><thead><tr><th>#</th><th>Item</th><th>Started</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Difference</th></tr></thead><tbody>${rows}</tbody></table>
 ${extras ? `<p class="extras">${escapeHtml(extras)}</p>` : ""}
 <footer>Service Timer report. Over (+) and under (−) are against each item's planned time.</footer>

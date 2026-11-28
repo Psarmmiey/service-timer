@@ -118,6 +118,10 @@ describe("report outputs", () => {
     expect(minutesWords(12 * 60_000)).toBe("12 min");
     expect(minutesWords(65 * 60_000)).toBe("1 h 5 min");
     expect(minutesWords(120 * 60_000)).toBe("2 h");
+    const { overallWords } = await import("../shared/report");
+    expect(overallWords(13 * 60_000)).toBe("13 min over");
+    expect(overallWords(-5 * 60_000)).toBe("5 min early");
+    expect(overallWords(20_000)).toBe("On time");
   });
 
   const summary = () => summarise(playSunday().record!);
@@ -146,5 +150,6 @@ describe("report outputs", () => {
     expect(html).toContain("<h1>Sunday service</h1>");
     expect(html).toContain("Praise &amp; Worship");
     expect(html).toContain("@page { size: A4");
+    expect(html).toContain("9 min over");
   });
 });
