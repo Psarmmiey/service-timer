@@ -22,6 +22,7 @@ export const PHONE_COMMANDS = new Set([
   "adjust",
   "message",
   "clearMessage",
+  "setMessageFlash",
   "blackout",
   "dismissBanner",
   // Today's running order only (FR-14, FR-14a); the saved plan never changes from a phone.

@@ -334,6 +334,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     }
 
     var msg = s.message ? s.message.text : "";
+    if (s.message && document.activeElement !== $("flash")) $("flash").checked = Boolean(s.message.flash);
     Array.prototype.forEach.call(document.querySelectorAll("#chips button"), function (b) { b.classList.toggle("on", b.textContent === msg); });
     $("clear-btn").disabled = !msg;
     var bo = $("blackout-btn");
@@ -485,6 +486,9 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   };
   $("pause-btn").onclick = function () { if (state) command({ type: state.paused ? "resume" : "pause" }); };
   $("start-btn").onclick = function () { command({ type: "start" }); };
+  $("flash").onchange = function () {
+    if (state && state.message) command({ type: "setMessageFlash", flash: $("flash").checked }, $("flash").checked ? "Message flashing" : "Message steady");
+  };
   $("clear-btn").onclick = function () { command({ type: "clearMessage" }, "Message cleared"); };
   $("blackout-btn").onclick = function () { if (state) command({ type: "blackout", on: !state.blackout }); };
   $("custom-form").onsubmit = function (e) {

@@ -231,6 +231,16 @@ describe("engine edge cases", () => {
     ]);
   });
 
+  it("turns flashing on and off for the message already showing", () => {
+    const idle = createIdleState(referencePlan, "2026-11-29");
+    expect(reduce(idle, { type: "setMessageFlash", flash: true }, at("09:40"), referencePlan)).toBe(idle);
+    let state = reduce(idle, { type: "message", text: "Please wrap up" }, at("09:40"), referencePlan);
+    state = reduce(state, { type: "setMessageFlash", flash: true }, at("09:41"), referencePlan);
+    expect(state.message).toEqual({ text: "Please wrap up", flash: true });
+    state = reduce(state, { type: "setMessageFlash", flash: false }, at("09:42"), referencePlan);
+    expect(state.message?.flash).toBe(false);
+  });
+
   it("message and blackout commands do not alter timer", () => {
     let state = createIdleState(referencePlan, "2026-11-29");
     state = reduce(state, { type: "message", text: "Please wrap up", flash: true }, at("09:45"));
