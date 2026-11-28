@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppState } from "../../shared/ipc";
+import { msUntilNextSecond, projectState } from "./live-time";
 import { formatClock, formatStageTime } from "./format";
 
 type StageViewProps = {
@@ -52,7 +53,24 @@ function useFitText(text: string, styleKey: string) {
   return { boxRef, measureRef, size, shape };
 }
 
-export function StageView({ state, className = "", preview = false }: StageViewProps) {
+function useLiveState(state: AppState | null): AppState | null {
+  const [, setTick] = useState(0);
+  const live = state ? projectState(state) : null;
+  useEffect(() => {
+    if (!live) return;
+    const view = live.view;
+    const counting = (view.status === "running" || view.status === "overrun") && !view.paused;
+    const firstStart = view.scheduleRows[0]?.scheduledStart;
+    const untilStart = view.status === "waiting" && firstStart ? firstStart - live.now : 0;
+    if (!counting && untilStart <= 0) return;
+    const timer = setTimeout(() => setTick((tick) => tick + 1), msUntilNextSecond(counting ? view.timeLeftMs : untilStart));
+    return () => clearTimeout(timer);
+  });
+  return live;
+}
+
+export function StageView({ state: sent, className = "", preview = false }: StageViewProps) {
+  const state = useLiveState(sent);
   const label = preview ? "Stage preview" : "Stage display";
   const view = state?.view;
   const overrun = view?.status === "overrun";

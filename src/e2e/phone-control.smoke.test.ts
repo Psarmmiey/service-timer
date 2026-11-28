@@ -10,6 +10,7 @@ let app: ElectronApplication;
 let control: Page;
 let base = "";
 let cookie = "";
+let phonePin = "";
 
 async function findWindow(selector: string): Promise<Page> {
   const deadline = Date.now() + 30_000;
@@ -56,6 +57,7 @@ describe("phone control", () => {
     const pinElement = control.getByLabel("Phone PIN");
     await pinElement.waitFor({ timeout: 10_000 });
     const pin = (await pinElement.textContent())!.trim();
+    phonePin = pin;
     expect(pin).toMatch(/^\d{4}$/);
     const url = (await control.locator("text=/^http:\\/\\/[0-9.]+:\\d+$/").first().textContent().catch(() => null))?.trim();
     const port = url ? new URL(url).port : "4280";
@@ -113,6 +115,33 @@ describe("phone control", () => {
     expect((await post("/api/command", { type: "editPlan", plan: {} })).status).toBe(403);
     expect((await post("/api/command", { type: "next" }, false)).status).toBe(401);
   });
+
+  it("counts in step with the stage, second by second", async () => {
+    const stage = await findWindow('[aria-label="Stage display"]');
+    await app.evaluate(({ BrowserWindow }, url) => {
+      const phoneWindow = new BrowserWindow({ width: 390, height: 844, show: false });
+      void phoneWindow.loadURL(url);
+    }, `${base}/`);
+    const phone = await findWindow("#login-form");
+    await phone.locator("#name").fill("Timing check");
+    await phone.locator("#pin").fill(phonePin);
+    await phone.getByRole("button", { name: "Connect" }).click();
+    await phone.locator("#digits").filter({ hasText: /^\d+:\d\d$/ }).waitFor({ timeout: 5_000 });
+
+    const stageDigits = () => stage.locator(".stage-digits").first().innerText();
+    const phoneDigits = () => phone.locator("#digits").innerText();
+    for (let sample = 0; sample < 6; sample += 1) {
+      // Wait for the stage to flip to a new second, then compare mid-second.
+      const before = await stageDigits();
+      await expect.poll(stageDigits, { timeout: 2_000, interval: 20 }).not.toBe(before);
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      const [onStage, onPhone] = await Promise.all([stageDigits(), phoneDigits()]);
+      expect(onPhone).toBe(onStage);
+    }
+    await app.evaluate(({ BrowserWindow }) => {
+      for (const window of BrowserWindow.getAllWindows()) if (window.webContents.getURL().includes("127.0.0.1")) window.destroy();
+    });
+  }, 30_000);
 
   it("names each phone on the laptop and can disconnect one", async () => {
     const pin = await (async () => {

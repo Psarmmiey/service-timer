@@ -41,6 +41,7 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   @media (prefers-reduced-motion: reduce) { .sign.flash { animation:none; } }
   .overword { font-size:.36em; margin-left:.12em; color:#fecaca; letter-spacing:.04em; }
   .digits { font-weight:800; font-variant-numeric: tabular-nums; font-size: clamp(64px, 24vw, 120px); line-height:1; margin:6px 0 4px; letter-spacing:-.02em; }
+  .timer.stale .digits { opacity:.45; }
   .digits.warning { color:var(--amber); } .digits.danger { color:#ff3b3b; } .digits.paused { opacity:.55; }
   .timer .next { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .timer.over .next { color:#fee2e2; }
@@ -203,6 +204,46 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
   var state = null, source = null, lastStatus = null, lastItem = null;
   var tab = localStorage.getItem("st-tab") || "timer", editing = -1, editMinutes = 0, rowsKey = "", confirming = -1, confirmTimer = 0;
   var $ = function (id) { return document.getElementById(id); };
+  /*
+   * Keeping time with the laptop: each update carries the laptop's clock. The phone works out
+   * the difference between the two clocks (using the quickest recent update, so Wi-Fi delays
+   * don't count) and keeps counting between updates. Updates correct it; they don't drive it.
+   */
+  var latest = null, offsets = [], lastMessageAt = 0, flipTimer = 0;
+  function laptopNow() { return Date.now() + (offsets.length ? Math.max.apply(null, offsets) : 0); }
+  function project(s) {
+    var elapsed = Math.max(0, laptopNow() - s.now);
+    var p = Object.assign({}, s, { now: s.now + elapsed });
+    var counting = (s.status === "running" || s.status === "overrun") && !s.paused;
+    if (counting) {
+      p.timeLeftMs = s.timeLeftMs - elapsed;
+      if (p.timeLeftMs <= 0) { p.status = "overrun"; p.colourBand = "over"; }
+    } else if (s.status === "waiting" && s.untilStartMs > 0) {
+      p.untilStartMs = s.untilStartMs - elapsed;
+    }
+    return p;
+  }
+  function msToFlip(ms) { return ms > 0 ? (ms % 1000) + 10 : 1000 - (-ms % 1000) + 10; }
+  /** Repaint exactly when the seconds on screen change. */
+  function paint() {
+    if (!latest) return;
+    var p = project(latest);
+    render(p);
+    var stale = Date.now() - lastMessageAt > 2500;
+    $("timer").classList.toggle("stale", stale);
+    clearTimeout(flipTimer);
+    var counting = (p.status === "running" || p.status === "overrun") && !p.paused;
+    var wait = counting ? msToFlip(p.timeLeftMs) : p.status === "waiting" && p.untilStartMs > 0 ? msToFlip(p.untilStartMs) : 1000;
+    flipTimer = setTimeout(paint, wait);
+  }
+  function receive(s) {
+    offsets.push(s.now - Date.now());
+    if (offsets.length > 40) offsets.shift();
+    latest = s;
+    lastMessageAt = Date.now();
+    if ($("conn").className !== "status") showLive();
+    paint();
+  }
   var myName = "";
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -388,16 +429,31 @@ export const PHONE_PAGE_HTML = String.raw`<!doctype html>
     });
   }
 
+  // The laptop sends two updates a second. Silence means the connection died quietly
+  // (Wi-Fi sleep, phone locked): reconnect instead of showing a frozen timer.
+  setInterval(function () {
+    if (!source || !lastMessageAt) return;
+    var quiet = Date.now() - lastMessageAt;
+    if (quiet > 2500) { $("conn").textContent = "Reconnecting…"; $("conn").className = "status bad"; }
+    if (quiet > 5000) connect();
+  }, 1000);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && source && Date.now() - lastMessageAt > 1500) connect();
+  });
+
+  function showLive() { $("conn").textContent = "Live" + (myName ? " · signed in as " + myName : ""); $("conn").className = "status"; }
+
   function connect() {
     $("login").classList.add("hidden"); $("app").classList.remove("hidden");
     if (source) source.close();
+    lastMessageAt = Date.now();
     source = new EventSource("/api/events");
-    source.onopen = function () { $("conn").textContent = "Live" + (myName ? " · signed in as " + myName : ""); $("conn").className = "status"; };
+    source.onopen = showLive;
     source.addEventListener("signed-out", function (e) {
       var reason = ""; try { reason = JSON.parse(e.data).reason; } catch (err) {}
       showLogin(reason === "disconnected" ? "The timer laptop disconnected this phone." : reason === "pin-changed" ? "The PIN was changed on the timer laptop. Enter the new one." : "Please sign in again.");
     });
-    source.onmessage = function (e) { try { render(JSON.parse(e.data)); } catch (err) {} };
+    source.onmessage = function (e) { try { receive(JSON.parse(e.data)); } catch (err) {} };
     source.onerror = function () {
       $("conn").textContent = "Reconnecting…"; $("conn").className = "status bad";
       fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { if (!j.signedIn) showLogin("Please sign in again."); }).catch(function () {});

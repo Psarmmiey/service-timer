@@ -276,6 +276,9 @@ export function createWebControl(options: WebControlOptions): WebControl {
         "Cache-Control": "no-store",
         Connection: "keep-alive",
       });
+      // Send each update the moment it's written, and notice dead phones sooner.
+      request.socket.setNoDelay(true);
+      request.socket.setKeepAlive(true, 10_000);
       response.write(`data: ${JSON.stringify(options.getSnapshot())}\n\n`);
       streams.set(response, session.token);
       notifyClients();
