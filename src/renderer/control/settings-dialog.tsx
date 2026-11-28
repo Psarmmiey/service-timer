@@ -328,16 +328,16 @@ export function SettingsDialog({
                   ? "Portable builds can't update themselves. Download the latest installer from GitHub Releases."
                   : state.update.state === "checking" ? "Checking for updates…"
                     : state.update.state === "downloading" ? `Downloading ${state.update.version ?? "update"}…`
-                      : state.update.state === "ready" ? `Version ${state.update.version} is ready. It installs when the app restarts, never during a service.`
+                      : state.update.state === "ready" ? `Version ${state.update.version} is ready. Restart now (about 10 seconds), or it installs next time Service Timer is closed while no service is running.`
                         : state.update.state === "error" ? `Couldn't check: ${state.update.message ?? "unknown error"}`
                           : state.update.message ?? "Updates never install during a service."
               }>
                 {state.update.state === "ready"
-                  ? <Button variant="default" onClick={() => send({ type: "restartToUpdate" })}>Restart to update</Button>
+                  ? <Button variant="default" disabled={state.view.status === "running" || state.view.status === "overrun" || state.view.paused} title="Not during a service" onClick={() => send({ type: "restartToUpdate" })}>Restart to update</Button>
                   : <Button disabled={state.update.portable || state.update.state === "checking" || state.update.state === "downloading"} onClick={() => send({ type: "checkForUpdates" })}>Check now</Button>}
               </Row>
               {state.update.portable ? null : (
-                <Row title="Automatic updates" hint="Checks when the app opens and every 6 hours while idle.">
+                <Row title="Automatic updates" hint="Checks when the app opens, after each service and every 6 hours, never during a service. Updates download in the background.">
                   <Switch aria-label="Automatic updates" checked={settings.automaticUpdates !== false} onCheckedChange={(automaticUpdates) => update({ automaticUpdates })} />
                 </Row>
               )}

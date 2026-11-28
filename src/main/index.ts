@@ -16,7 +16,7 @@ import { listEntry, summarise, toCsv, toHtml, type ReportListEntry, type Service
 import { periodCsv, periodHtml, periodRange, summarisePeriod, type Period } from "../shared/period-report";
 import type { Command } from "../engine";
 import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
-import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
+import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS, UPDATE_RETRY_MS } from "./update-policy";
 
 // Loaded on first use, not at startup.
 const autoUpdater = () => electronUpdater.autoUpdater;
@@ -220,6 +220,7 @@ let updateStatus: UpdateStatus = {
 };
 let updateCheckTimer: NodeJS.Timeout | null = null;
 let downloadedUpdateVersion: string | undefined;
+let updateRetryTimer: NodeJS.Timeout | null = null;
 let store: JsonStore | null = null;
 let tray: Tray | null = null;
 let powerBlockerId: number | null = null;
@@ -498,7 +499,7 @@ function applyTimerCommand(command: Command): void {
   const previous = state;
   state = reduce(state, command, now, currentPlan);
   withMessageRules(previous, now);
-  recordChange(previous, now, { source: "phone", command });
+  afterRunChange(previous, now, { source: "phone", command });
   persistRunState();
   updatePowerBlocker();
   broadcastState(now);
@@ -802,7 +803,7 @@ function startTickLoop(): void {
       const before = state;
       state = reduce(state, { type: "tick" }, now, currentPlan);
       withMessageRules(before, now);
-      recordChange(before, now, { source: "timer", command: { type: "tick" } });
+      afterRunChange(before, now, { source: "timer", command: { type: "tick" } });
       if (state.status !== before.status || state.message !== before.message) persistRunState();
       updatePowerBlocker();
       broadcastState(now);
@@ -844,7 +845,8 @@ function identifyDisplays(): void {
 function checkForUpdates(): void {
   if (updateStatus.portable) return;
   if (!settings.automaticUpdates && updateStatus.state !== "idle") return;
-  if (!canCheckForUpdates(state.status)) return;
+  const msUntilStart = state.status === "waiting" ? planStartMs(currentPlan, state.runDate) + state.shiftMs - Date.now() : 0;
+  if (!canCheckForUpdates(state.status, msUntilStart)) return;
   updateStatus = { ...updateStatus, state: "checking", message: undefined };
   broadcastState();
   void autoUpdater().checkForUpdates();
@@ -873,6 +875,12 @@ function setupUpdater(): void {
   autoUpdater().on("error", (error) => {
     updateStatus = { ...updateStatus, state: "error", message: error.message };
     broadcastState();
+    // A new release can take a few minutes to get its files; try again soon rather than in 6 hours.
+    if (updateRetryTimer) clearTimeout(updateRetryTimer);
+    updateRetryTimer = setTimeout(() => {
+      updateRetryTimer = null;
+      if (settings.automaticUpdates) checkForUpdates();
+    }, UPDATE_RETRY_MS);
   });
 
   if (app.isPackaged && !updateStatus.portable && settings.automaticUpdates) {
@@ -887,7 +895,16 @@ function setupUpdater(): void {
 
 function restartToUpdate(): void {
   if (!downloadedUpdateVersion || !canInstallUpdate(state.status)) return;
-  autoUpdater().quitAndInstall(false, true);
+  // Install quietly, then open Service Timer again.
+  autoUpdater().quitAndInstall(true, true);
+}
+
+/** After any change to the run: keep the service record, and look for updates once a service ends. */
+function afterRunChange(before: RunState, now: number, cause: Cause): void {
+  recordChange(before, now, cause);
+  if (isLive(before) && !isLive(state) && app.isPackaged && !updateStatus.portable && settings.automaticUpdates) {
+    setTimeout(checkForUpdates, 30_000);
+  }
 }
 
 function registerIpc(): void {
@@ -976,7 +993,7 @@ function handleCommand(payload: unknown): void {
       state = reduce(state, payload, now, currentPlan);
     }
     withMessageRules(previous, now);
-    recordChange(previous, now, { source: "laptop", command: payload as Command });
+    afterRunChange(previous, now, { source: "laptop", command: payload as Command });
     lastWebBroadcast = 0;
     persistRunState();
     updatePowerBlocker();
@@ -1085,6 +1102,7 @@ app.on("window-all-closed", () => {
   if (tickTimer) clearInterval(tickTimer);
   if (hotPlugTimer) clearTimeout(hotPlugTimer);
   if (updateCheckTimer) clearInterval(updateCheckTimer);
+  if (updateRetryTimer) clearTimeout(updateRetryTimer);
   if (persistenceTimer) clearInterval(persistenceTimer);
   persistRunState();
   if (powerBlockerId !== null) {
@@ -1095,7 +1113,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  // Closing the app with an update downloaded and no service running installs it quietly,
+  // without opening the app again.
   if (downloadedUpdateVersion && canInstallUpdate(state.status)) {
-    autoUpdater().quitAndInstall(false, true);
+    autoUpdater().quitAndInstall(true, false);
   }
 });
