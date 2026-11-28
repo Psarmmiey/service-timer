@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -19,6 +20,28 @@ import {
 } from "../shared/ui";
 import { playChime } from "./chime";
 import { send } from "./common";
+
+/** Text that saves when you leave the box or press Enter, not on every key. */
+function WordingInput({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    const next = draft.trim().slice(0, 80);
+    if (next && next !== value) onCommit(next);
+    else setDraft(value);
+  };
+  return (
+    <Input
+      aria-label="Wrap-up wording"
+      className="w-[220px]"
+      maxLength={80}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => { if (event.key === "Enter") commit(); }}
+    />
+  );
+}
 
 export type Section = "stage" | "alerts" | "phone" | "appearance" | "startup" | "updates" | "help";
 
@@ -191,6 +214,24 @@ export function SettingsDialog({
                     {[15, 30, 60].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 60 ? `${seconds} s left` : "1 min left"}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </Row>
+              <h3 className="mt-6 text-sm font-semibold">Stage messages</h3>
+              <Row title="Wrap-up message" hint="Shown on the stage near the end of each item. It never covers a message someone has put up, and goes away if time is added.">
+                <Select value={String(settings.wrapUpAtSeconds ?? 60)} onValueChange={(value) => update({ wrapUpAtSeconds: Number(value) })}>
+                  <SelectTrigger className="w-[180px]" aria-label="Wrap-up message"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Off</SelectItem>
+                    {[30, 60, 120, 300].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 60 ? `${seconds} s left` : `${seconds / 60} min left`}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Row>
+              {(settings.wrapUpAtSeconds ?? 60) > 0 ? (
+                <Row title="Wrap-up wording" hint="What the stage says.">
+                  <WordingInput value={settings.wrapUpText ?? "Please wrap up"} onCommit={(wrapUpText) => update({ wrapUpText })} />
+                </Row>
+              ) : null}
+              <Row title="Clear the message on a new item" hint="When the timer moves to another item (Next, automatic, Start now), any message on the stage goes away.">
+                <Switch aria-label="Clear the message on a new item" checked={settings.clearMessageOnItemChange !== false} onCheckedChange={(clearMessageOnItemChange) => update({ clearMessageOnItemChange })} />
               </Row>
               <Row title="Chime on this laptop" hint="Only this laptop plays it, never the stage, so the room doesn't hear it.">
                 <div className="flex items-center gap-2">

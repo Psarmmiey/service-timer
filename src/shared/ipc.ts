@@ -15,6 +15,12 @@ export type Settings = {
   walkthroughSeen?: boolean;
   /** Show item names in capitals on the stage. Default on. */
   itemNamesUppercase?: boolean;
+  /** Show the wrap-up message this many seconds before an item ends; 0 is off. Default 60. */
+  wrapUpAtSeconds?: number;
+  /** Wording of the wrap-up message. Default "Please wrap up". */
+  wrapUpText?: string;
+  /** Clear the stage message when the timer moves to another item. Default on. */
+  clearMessageOnItemChange?: boolean;
   /** Flash the TIME UP sign while an item is over time. Default on. */
   flashTimeUp?: boolean;
   /** Replaced by flashTimeUp; kept so older settings files still load. */
