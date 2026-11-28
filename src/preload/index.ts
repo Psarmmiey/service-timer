@@ -14,6 +14,9 @@ const api: Api = {
       ipcRenderer.removeListener("state", handler);
     };
   },
+  getReportsBetween(from: string, to: string) {
+    return ipcRenderer.invoke("reports:between", from, to);
+  },
   getReport(id: string) {
     return ipcRenderer.invoke("report:get", id);
   },

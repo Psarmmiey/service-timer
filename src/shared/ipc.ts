@@ -1,4 +1,5 @@
 import type { ReportListEntry, ServiceRecord } from "./report";
+import type { Period } from "./period-report";
 import type { Command, DerivedView, Plan } from "../engine";
 
 export type Settings = {
@@ -80,6 +81,7 @@ export type TimerCommand =
   | { type: "newPhonePin" }
   | { type: "exportReport"; id: string; format: "csv" | "pdf" | "print" }
   | { type: "deleteReport"; id: string }
+  | { type: "exportPeriod"; period: Period; planName?: string; format: "csv" | "pdf" | "print" }
   /** Sign one phone out; with newPin, also change the PIN so it can't sign straight back in. */
   | { type: "disconnectPhone"; id: string; newPin?: boolean }
   | { type: "restartToUpdate" };
@@ -142,4 +144,6 @@ export type Api = {
   onState: (callback: (state: AppState) => void) => () => void;
   onMenu: (callback: (action: MenuAction, file?: MenuFile) => void) => () => void;
   getReport: (id: string) => Promise<ServiceRecord | null>;
+  /** Every record whose service date is between from and to (YYYY-MM-DD, inclusive). */
+  getReportsBetween: (from: string, to: string) => Promise<ServiceRecord[]>;
 };

@@ -16,8 +16,10 @@ import {
   type ReportSummary,
   type ServiceRecord,
 } from "../../shared/report";
-import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogTitle, Switch } from "../shared/ui";
+import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogTitle, Switch, ToggleGroup, ToggleGroupItem } from "../shared/ui";
 import { send } from "./common";
+import { PeriodView } from "./period-view";
+import type { PeriodKind } from "../../shared/period-report";
 
 const START_WORDS: Record<ReportSummary["startMode"], string> = {
   onTime: "Started with Start",
@@ -49,11 +51,14 @@ export function ReportsDialog({ state, open, onOpenChange, openId }: { state: Ap
   const [record, setRecord] = useState<ServiceRecord | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [mode, setMode] = useState<"service" | PeriodKind>("service");
   const list = state.reports.filter((entry) => showTests || !entry.test || entry.id === selected);
   const listKey = state.reports.find((entry) => entry.id === selected);
 
   useEffect(() => {
-    if (open) setSelected(openId ?? state.reports.find((entry) => !entry.test)?.id ?? state.reports[0]?.id);
+    if (!open) return;
+    setSelected(openId ?? state.reports.find((entry) => !entry.test)?.id ?? state.reports[0]?.id);
+    if (openId) setMode("service");
   }, [open, openId]);
 
   // Load the chosen record; reload while it is still running so the numbers move.
@@ -82,12 +87,22 @@ export function ReportsDialog({ state, open, onOpenChange, openId }: { state: Ap
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(640px,calc(100vh-48px))] w-[min(1040px,calc(100vw-32px))] max-w-none gap-0 p-0">
-        <nav className="flex w-[260px] shrink-0 flex-col border-r border-zinc-200" aria-label="Past services">
-          <div className="border-b border-zinc-200 px-4 py-3">
+      <DialogContent className="flex h-[min(720px,calc(100vh-48px))] w-[min(1080px,calc(100vw-32px))] max-w-none flex-col gap-0 p-0">
+        <div className="flex items-center gap-4 border-b border-zinc-200 px-5 py-3 pr-12">
+          <div className="min-w-0 flex-1">
             <DialogTitle className="text-base">Service reports</DialogTitle>
             <DialogDescription className="mt-0.5 text-xs">What actually happened, against the plan.</DialogDescription>
           </div>
+          <ToggleGroup type="single" value={mode} onValueChange={(value) => value && setMode(value as typeof mode)} className="flex gap-1" aria-label="Report for">
+            <ToggleGroupItem value="service" className="h-8 text-xs">Each service</ToggleGroupItem>
+            <ToggleGroupItem value="month" className="h-8 text-xs">Month</ToggleGroupItem>
+            <ToggleGroupItem value="quarter" className="h-8 text-xs">Quarter</ToggleGroupItem>
+            <ToggleGroupItem value="year" className="h-8 text-xs">Year</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        {mode !== "service" ? <PeriodView kind={mode} refreshKey={state.reports.length} /> : (
+        <div className="flex min-h-0 flex-1">
+        <nav className="flex w-[260px] shrink-0 flex-col border-r border-zinc-200" aria-label="Past services">
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {list.length ? list.map((entry) => (
               <button
@@ -218,6 +233,8 @@ export function ReportsDialog({ state, open, onOpenChange, openId }: { state: Ap
             </div>
           )}
         </section>
+        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
