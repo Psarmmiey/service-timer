@@ -4,7 +4,7 @@ import electronUpdater from "electron-updater";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import QRCode from "qrcode";
-import { createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
+import { applyMessageRules, createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
 import { chooseTodaysPlan, localDateString, planStartMs } from "../engine/schedule";
 import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./display-selection";
 import { createJsonStore, type JsonStore } from "./storage";
@@ -70,6 +70,9 @@ function isSettings(value: unknown): value is Settings {
     && (value.flashAtZero === undefined || typeof value.flashAtZero === "boolean")
     && (value.flashTimeUp === undefined || typeof value.flashTimeUp === "boolean")
     && (value.itemNamesUppercase === undefined || typeof value.itemNamesUppercase === "boolean")
+    && (value.wrapUpAtSeconds === undefined || (isFiniteNumber(value.wrapUpAtSeconds) && value.wrapUpAtSeconds >= 0 && value.wrapUpAtSeconds <= 900))
+    && (value.wrapUpText === undefined || (typeof value.wrapUpText === "string" && value.wrapUpText.length <= 80))
+    && (value.clearMessageOnItemChange === undefined || typeof value.clearMessageOnItemChange === "boolean")
     && (value.dangerAtSeconds === undefined || (isInteger(value.dangerAtSeconds) && value.dangerAtSeconds >= 0 && value.dangerAtSeconds <= 600))
     && (value.chime === undefined || value.chime === "off" || value.chime === "time-up" || value.chime === "warning-and-time-up")
     && (value.overtimeSign === undefined || value.overtimeSign === "plus" || value.overtimeSign === "minus")
@@ -183,6 +186,9 @@ let settings: Settings = {
   walkthroughSeen: false,
   flashTimeUp: true,
   itemNamesUppercase: true,
+  wrapUpAtSeconds: 60,
+  wrapUpText: "Please wrap up",
+  clearMessageOnItemChange: true,
   dangerAtSeconds: 30,
   chime: "time-up",
   overtimeSign: "plus",
@@ -349,9 +355,20 @@ async function syncWebControl(): Promise<void> {
 }
 
 /** Apply a timer command from the control window or a phone. */
+/** Stage message rules (wrap-up near the end, clear on a new item), applied after every change. */
+function withMessageRules(previous: RunState, now: number): void {
+  state = applyMessageRules(previous, state, currentPlan, now, {
+    wrapUpAtSeconds: settings.wrapUpAtSeconds ?? 60,
+    wrapUpText: settings.wrapUpText ?? "Please wrap up",
+    clearOnItemChange: settings.clearMessageOnItemChange !== false,
+  });
+}
+
 function applyTimerCommand(command: Command): void {
   const now = Date.now();
+  const previous = state;
   state = reduce(state, command, now, currentPlan);
+  withMessageRules(previous, now);
   persistRunState();
   updatePowerBlocker();
   broadcastState(now);
@@ -652,9 +669,10 @@ function startTickLoop(): void {
         armForToday(now);
         persistRunState();
       }
-      const before = state.status;
+      const before = state;
       state = reduce(state, { type: "tick" }, now, currentPlan);
-      if (state.status !== before) persistRunState();
+      withMessageRules(before, now);
+      if (state.status !== before.status || state.message !== before.message) persistRunState();
       updatePowerBlocker();
       broadcastState(now);
     } catch (error) {
@@ -751,6 +769,7 @@ function handleCommand(payload: unknown): void {
 
   try {
     const now = Date.now();
+    const previous = state;
     if (payload.type === "identifyDisplays") {
       identifyDisplays();
     } else if (payload.type === "savePlans") {
@@ -807,6 +826,7 @@ function handleCommand(payload: unknown): void {
     } else {
       state = reduce(state, payload, now, currentPlan);
     }
+    withMessageRules(previous, now);
     lastWebBroadcast = 0;
     persistRunState();
     updatePowerBlocker();

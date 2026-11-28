@@ -222,10 +222,19 @@ describe("stage messages", () => {
     await control.screenshot({ path: join(shots, "06-control.png") });
   });
 
-  it("keeps the message when moving to the next item", async () => {
+  it("clears the message when moving to the next item", async () => {
     await blurFocus();
     await control.keyboard.press("n");
-    await control.waitForTimeout(400);
+    await expectNoStageMessage();
+  });
+
+  it("shows Please wrap up by itself one minute before the end, and takes it away if time is added", async () => {
+    // Praise and worship (20 min) is running: bring it down to under a minute.
+    await blurFocus();
+    for (let index = 0; index < 19; index += 1) await control.keyboard.press("-");
     await expectStageMessage("Please wrap up");
+    await stage.screenshot({ path: join(shots, "07-wrap-up.png") });
+    await control.keyboard.press("+");
+    await expectNoStageMessage();
   });
 });

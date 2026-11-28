@@ -32,7 +32,10 @@ export type RunState = {
   pausedLeftMs?: number;
   shiftMs: number;
   skipped: string[];
-  message?: { text: string; flash: boolean };
+  /** auto: shown by the wrap-up rule, so it can take itself away if time is added. */
+  message?: { text: string; flash: boolean; auto?: boolean };
+  /** The item the wrap-up message has already been shown for, so it shows once per item. */
+  wrapUpShownFor?: string;
   blackout: boolean;
   undoReorder?: ReorderUndo;
   clockJumpLoggedMs?: number;
