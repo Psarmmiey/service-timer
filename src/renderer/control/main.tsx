@@ -717,7 +717,15 @@ function ControlApp() {
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold">Message to stage</h2>
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
-                  <Switch checked={flash} onCheckedChange={setFlash} aria-label="Flash stage message" /> Flash
+                  <Switch
+                    // Shows (and changes) the message on the stage now, and is used for the next one.
+                    checked={view.message ? view.message.flash : flash}
+                    onCheckedChange={(next) => {
+                      setFlash(next);
+                      if (view.message) send({ type: "setMessageFlash", flash: next });
+                    }}
+                    aria-label="Flash stage message"
+                  /> Flash
                 </label>
               </div>
               <div className="mt-2 flex items-center gap-2">

@@ -149,6 +149,8 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return typeof value.text === "string" && (value.flash === undefined || typeof value.flash === "boolean");
     case "blackout":
       return typeof value.on === "boolean";
+    case "setMessageFlash":
+      return typeof value.flash === "boolean";
     case "skipAutoStartToday":
     case "disconnectPhone":
       return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");

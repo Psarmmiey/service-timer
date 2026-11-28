@@ -470,3 +470,7 @@ The phone used to change its digits only when an update arrived (twice a second)
 ### Decision: automatic stage messages (28 Nov 2026)
 
 From user feedback. "Please wrap up" appears on the stage by itself one minute before each item ends (Settings, Time up and alerts: Off, 30 s, 1, 2 or 5 min; wording can be changed). It shows once per item, never covers a message someone has put up, skips items no longer than the warning, and takes itself away (and re-arms) if time is added. Separately, any stage message now clears when the timer moves to another item (Next, automatic advance, Start now, Previous), on by default with a switch to keep messages instead. Starting the service and restarting an item leave the message alone. The rules run in the main process after every change, so they work the same from the laptop, a phone or the clock.
+
+### Fix: message flash (28 Nov 2026)
+
+The Flash switch only applied to the next message, the flash was a soft fade to 45% that read as "not flashing" on a projector, and reduced-motion settings (common on church laptops) turned it off entirely. Now the switch shows and changes the message already on the stage (laptop and phone, via a new setMessageFlash command), the flash is a clear once-a-second swap between a white box and a white outline (readable in both halves, on black or red), and a message someone chose to flash keeps flashing with reduced motion on.

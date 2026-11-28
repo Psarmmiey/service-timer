@@ -126,7 +126,20 @@ describe("stage messages", () => {
     expect(await stageMessage().getAttribute("data-flash")).toBe("true");
     const animation = await stageMessage().evaluate((el) => getComputedStyle(el).animationName);
     expect(animation).toBe("message-flash");
+    // The switch also changes the message already on the stage, both ways.
     await control.getByRole("switch", { name: "Flash stage message" }).click();
+    await stage.waitForSelector('.stage-message[data-flash="false"]', { timeout: 5_000 });
+    await control.getByRole("switch", { name: "Flash stage message" }).click();
+    await stage.waitForSelector('.stage-message[data-flash="true"]', { timeout: 5_000 });
+    // It visibly swaps: white box, then white outline.
+    const looks = new Set<string>();
+    for (let sample = 0; sample < 6; sample += 1) {
+      looks.add(await stageMessage().evaluate((el) => getComputedStyle(el).backgroundColor));
+      await stage.waitForTimeout(250);
+    }
+    expect(looks.size).toBeGreaterThan(1);
+    await control.getByRole("switch", { name: "Flash stage message" }).click();
+    await stage.waitForSelector('.stage-message[data-flash="false"]', { timeout: 5_000 });
   });
 
   it("clears with the Clear button and with Esc, and M focuses the message box", async () => {

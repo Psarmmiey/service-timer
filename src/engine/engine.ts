@@ -24,6 +24,8 @@ export type Command =
   | { type: "undoReorder" }
   | { type: "message"; text: string; flash?: boolean }
   | { type: "clearMessage" }
+  /** Turn flashing on or off for the message already showing. */
+  | { type: "setMessageFlash"; flash: boolean }
   | { type: "blackout"; on: boolean }
   | { type: "dismissBanner" }
   | { type: "tick" };
@@ -346,6 +348,7 @@ export function reduce(state: RunState, command: Command, now: number, plan?: Pl
     return { ...state, message: { text: command.text, flash: command.flash ?? false } };
   }
   if (command.type === "clearMessage") return { ...state, message: undefined };
+  if (command.type === "setMessageFlash") return state.message ? { ...state, message: { ...state.message, flash: command.flash } } : state;
   if (command.type === "blackout") return { ...state, blackout: command.on };
   if (command.type === "dismissBanner") return { ...state, banner: undefined, bannerAction: undefined };
   return state;
