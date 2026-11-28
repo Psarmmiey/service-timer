@@ -883,6 +883,11 @@ function setupUpdater(): void {
     }, UPDATE_RETRY_MS);
   });
 
+  // Tests only: pretend an update has downloaded, to check what the window shows.
+  if (process.env.NODE_ENV === "test" && process.env.SERVICE_TIMER_E2E_UPDATE_READY) {
+    downloadedUpdateVersion = process.env.SERVICE_TIMER_E2E_UPDATE_READY;
+    updateStatus = { ...updateStatus, state: "ready", version: downloadedUpdateVersion };
+  }
   if (app.isPackaged && !updateStatus.portable && settings.automaticUpdates) {
     checkForUpdates();
   }

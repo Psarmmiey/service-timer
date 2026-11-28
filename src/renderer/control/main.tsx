@@ -423,9 +423,9 @@ function ControlApp() {
     const key = state.update.version ?? "update";
     if (offeredUpdate.current === key) return;
     offeredUpdate.current = key;
-    toast(`Service Timer ${state.update.version ?? ""} is ready to install`, {
+    toast(`Update ${state.update.version ?? ""} ready`, {
       id: "update-ready",
-      description: "Restarting takes about 10 seconds. If you'd rather wait, it installs next time Service Timer is closed while no service is running.",
+      description: "Restart takes 10 seconds. Later installs it when you close the app.",
       duration: Infinity,
       action: { label: "Restart now", onClick: () => send({ type: "restartToUpdate" }) },
       cancel: { label: "Later", onClick: () => undefined },
