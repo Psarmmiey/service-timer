@@ -415,6 +415,30 @@ function ControlApp() {
     setReportId(id);
     setReportsOpen(true);
   };
+  // An update is ready and no service is running: say so plainly, once per version (and again after a service).
+  const offeredUpdate = useRef<string | null>(null);
+  const updateLive = state ? isLiveView(state) : false;
+  useEffect(() => {
+    if (!state || state.update.state !== "ready" || updateLive) return;
+    const key = state.update.version ?? "update";
+    if (offeredUpdate.current === key) return;
+    offeredUpdate.current = key;
+    toast(`Update ${state.update.version ?? ""} ready`, {
+      id: "update-ready",
+      description: "Restart takes 10 seconds. Later installs it when you close the app.",
+      duration: Infinity,
+      action: { label: "Restart now", onClick: () => send({ type: "restartToUpdate" }) },
+      cancel: { label: "Later", onClick: () => undefined },
+    });
+  }, [state?.update.state, state?.update.version, updateLive]);
+  useEffect(() => {
+    // A service started: put the note away, and offer it again once the service ends.
+    if (updateLive) {
+      toast.dismiss("update-ready");
+      offeredUpdate.current = null;
+    }
+  }, [updateLive]);
+
   // When a service ends, offer its report.
   const seenReport = useRef<string | undefined | null>(null);
   useEffect(() => {

@@ -82,16 +82,17 @@ Single-key shortcuts (Space, arrows, B, M) are shown in the menu but only work w
 
 ## Updating
 
-Installed Windows builds check for updates on launch and every six hours while idle. Updates download in the background and are never installed while the timer is Waiting, Running or Paused.
+Installed Windows builds look for new releases on GitHub when the app opens, after each service, and every six hours. They also look while waiting for a service that is more than an hour away. They never look or install during a service. Updates download in the background.
 
-In Settings:
+When an update is downloaded and no service is running, the control window says so, with **Restart now** (about 10 seconds) and **Later**. If you choose Later, the update installs quietly the next time Service Timer is closed while no service is running.
 
-- The dot beside **Update ready** means an update is downloaded.
-- Select **Check for updates now** to check manually.
-- Turn **Automatic updates** on or off.
-- Select **Restart to update** to install a downloaded update while idle.
+In Settings, Updates:
 
-If an update fails, Service Timer keeps running the installed version and shows the error in Settings.
+- **Check now** looks straight away (also **Help > Check for Updates**).
+- **Restart to update** installs a downloaded update.
+- **Automatic updates** turns the background checks on or off.
+
+If a check fails (for example, a release that is still uploading), it tries again after 30 minutes. Service Timer keeps running the installed version and shows the error in Settings.
 
 ## Laptop checklist
 
