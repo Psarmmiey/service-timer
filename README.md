@@ -92,9 +92,13 @@ If an update fails, Service Timer keeps running the installed version and shows 
 
 ## Making a release
 
-Raise the version in `package.json` (for example `npm version 1.0.0 --no-git-tag-version`) in the pull request. When it is merged into `main`, the Release workflow sees a version that hasn't been released, creates the `v1.0.0` tag and GitHub Release, and attaches the Windows installer and portable `.exe` and the Mac `.dmg`. Installed Windows copies update themselves from it.
+Releases are run by [Release Please](https://github.com/googleapis/release-please), from the Conventional Commits merged into `main`:
 
-A merge that keeps the same version only builds the installers as downloadable workflow artifacts, without making a release. Pushing a `v*` tag by hand also publishes a release.
+- `fix: ...` commits make a patch release (0.1.1 to 0.1.2); `feat: ...` commits make a minor release (0.1.1 to 0.2.0).
+- After each merge, Release Please opens or updates a pull request called **chore: release x.y.z**, with the new version and the `CHANGELOG.md` entries.
+- Merge that pull request when you want to ship. It tags `vx.y.z` and publishes the GitHub Release, and the Release workflow attaches the Windows installer and portable `.exe` and the Mac `.dmg` about 10 minutes later. Installed Windows copies update themselves from it.
+
+Every push to `main` also builds the installers as downloadable workflow artifacts. Don't change the version in `package.json` by hand.
 
 The logo lives in `build/icon.svg` (and `build/tray-template.svg` for the Mac menu bar). After changing either, run `npm run icons` on a Mac to regenerate every icon size.
 

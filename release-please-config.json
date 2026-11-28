@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "service-timer",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "bump-minor-pre-major": true,
+      "pull-request-title-pattern": "chore: release ${version}",
+      "changelog-sections": [
+        { "type": "feat", "section": "New" },
+        { "type": "fix", "section": "Fixed" },
+        { "type": "perf", "section": "Faster" },
+        { "type": "docs", "section": "Docs", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "ci", "section": "Build and release", "hidden": true },
+        { "type": "chore", "section": "Housekeeping", "hidden": true }
+      ]
+    }
+  }
+}
