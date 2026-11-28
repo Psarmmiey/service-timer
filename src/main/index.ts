@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell, Tray } from "electron";
 // electron-updater is CommonJS; a named ESM import crashes the main process on launch.
 import electronUpdater from "electron-updater";
-import { readFile } from "node:fs/promises";
+import { readdirSync, unlinkSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import QRCode from "qrcode";
 import { applyMessageRules, createIdleState, createWaitingState, derive, isLive, reduce, type Item, type Plan, type RunState } from "../engine";
@@ -10,6 +11,8 @@ import { chooseStagePlacement, type DisplayInfo, type StagePlacement } from "./d
 import { createJsonStore, type JsonStore } from "./storage";
 import type { AppState, DisplayStatus, MenuAction, Settings, TimerCommand, UpdateStatus, WebControlStatus } from "../shared/ipc";
 import { menuTemplate } from "./menu";
+import { observe, type Cause } from "./service-recorder";
+import { listEntry, summarise, toCsv, toHtml, type ReportListEntry, type ServiceRecord } from "../shared/report";
 import type { Command } from "../engine";
 import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
@@ -152,6 +155,10 @@ function isTimerCommand(value: unknown): value is TimerCommand {
     case "setMessageFlash":
       return typeof value.flash === "boolean";
     case "skipAutoStartToday":
+    case "exportReport":
+      return typeof value.id === "string" && (value.format === "csv" || value.format === "pdf" || value.format === "print");
+    case "deleteReport":
+      return typeof value.id === "string";
     case "disconnectPhone":
       return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");
     case "newPhonePin":
@@ -266,6 +273,8 @@ function toAppState(now: number): AppState {
     settings,
     update: { ...updateStatus, currentVersion: app.getVersion() },
     showWalkthrough: !settings.walkthroughSeen && process.env.NODE_ENV !== "test",
+    reports: reportList,
+    lastEndedReportId,
     web: { ...webStatus, pin: settings.phoneControl ? settings.phonePin : undefined, phones: webStatus.running ? webControl.phones() : [] },
   };
 }
@@ -357,6 +366,100 @@ async function syncWebControl(): Promise<void> {
 }
 
 /** Apply a timer command from the control window or a phone. */
+// ---------- Service reports ----------
+
+/** The service being recorded now, if any. Saved to reports/<id>.json after every change. */
+let serviceRecord: ServiceRecord | null = null;
+let reportList: ReportListEntry[] = [];
+/** The last service to end, so the control window can offer its report. */
+let lastEndedReportId: string | undefined;
+
+const reportFile = (id: string) => `reports/${id.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+
+function readAllReports(): ServiceRecord[] {
+  try {
+    return readdirSync(join(app.getPath("userData"), "reports"))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => store?.read<ServiceRecord | null>(`reports/${name}`, null))
+      .filter((record): record is ServiceRecord => Boolean(record && record.version === 1 && record.id));
+  } catch {
+    return [];
+  }
+}
+
+function refreshReportList(records = readAllReports()): void {
+  reportList = records.map(listEntry).sort((a, b) => b.startedAt - a.startedAt);
+}
+
+/** Note what just happened in the record of the current service. */
+function recordChange(before: RunState, now: number, cause: Cause): void {
+  const next = observe(serviceRecord, before, state, currentPlan, now, cause);
+  if (next === serviceRecord || !next) return;
+  store?.write(reportFile(next.id), next);
+  const entry = listEntry(next);
+  reportList = [entry, ...reportList.filter((item) => item.id !== next.id)].sort((a, b) => b.startedAt - a.startedAt);
+  if (next.endedAt !== undefined) {
+    serviceRecord = null;
+    if (!entry.test) lastEndedReportId = next.id;
+  } else {
+    serviceRecord = next;
+  }
+}
+
+/** On start-up: carry on recording a service that was running, and close any left open. */
+function loadReports(): void {
+  const records = readAllReports();
+  for (const record of records) {
+    if (record.endedAt !== undefined) continue;
+    if (isLive(state) && record.runDate === state.runDate && record.planId === state.planId && !serviceRecord) {
+      serviceRecord = record;
+      continue;
+    }
+    const lastSeen = Math.max(record.startedAt, ...record.timeline.map((entry) => entry.at), ...record.items.flatMap((item) => item.runs.map((run) => run.to ?? run.from)));
+    const closed: ServiceRecord = {
+      ...record,
+      endedAt: lastSeen,
+      ending: "stopped",
+      pausedSince: undefined,
+      items: record.items.map((item) => ({ ...item, runs: item.runs.map((run) => ({ ...run, to: run.to ?? lastSeen })) })),
+      timeline: [...record.timeline, { at: lastSeen, text: "The timer was closed before the service ended", by: "timer" }],
+    };
+    store?.write(reportFile(record.id), closed);
+    Object.assign(record, closed);
+  }
+  refreshReportList(records);
+}
+
+function saveDialog(options: Electron.SaveDialogOptions) {
+  return controlWindow && !controlWindow.isDestroyed() ? dialog.showSaveDialog(controlWindow, options) : dialog.showSaveDialog(options);
+}
+
+async function exportReport(id: string, format: "csv" | "pdf" | "print"): Promise<void> {
+  const record = store?.read<ServiceRecord | null>(reportFile(id), null);
+  if (!record) return;
+  const summary = summarise(record);
+  const name = `${record.planName} ${record.runDate}`.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+  const html = toHtml(summary);
+  if (format === "csv") {
+    const result = await saveDialog({ title: "Save report as CSV", defaultPath: `${name}.csv`, filters: [{ name: "CSV", extensions: ["csv"] }] });
+    if (!result.canceled && result.filePath) await writeFile(result.filePath, toCsv(summary), "utf8");
+    return;
+  }
+  const page = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  try {
+    await page.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    if (format === "print") {
+      await new Promise<void>((resolve) => page.webContents.print({ silent: false, printBackground: true }, () => resolve()));
+      return;
+    }
+    const pdf = await page.webContents.printToPDF({ pageSize: "A4", printBackground: true });
+    const result = await saveDialog({ title: "Save report as PDF", defaultPath: `${name}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+    if (!result.canceled && result.filePath) await writeFile(result.filePath, pdf);
+  } finally {
+    if (!page.isDestroyed()) page.destroy();
+  }
+}
+
 /** Stage message rules (wrap-up near the end, clear on a new item), applied after every change. */
 function withMessageRules(previous: RunState, now: number): void {
   state = applyMessageRules(previous, state, currentPlan, now, {
@@ -371,6 +474,7 @@ function applyTimerCommand(command: Command): void {
   const previous = state;
   state = reduce(state, command, now, currentPlan);
   withMessageRules(previous, now);
+  recordChange(previous, now, { source: "phone", command });
   persistRunState();
   updatePowerBlocker();
   broadcastState(now);
@@ -674,6 +778,7 @@ function startTickLoop(): void {
       const before = state;
       state = reduce(state, { type: "tick" }, now, currentPlan);
       withMessageRules(before, now);
+      recordChange(before, now, { source: "timer", command: { type: "tick" } });
       if (state.status !== before.status || state.message !== before.message) persistRunState();
       updatePowerBlocker();
       broadcastState(now);
@@ -763,6 +868,7 @@ function restartToUpdate(): void {
 
 function registerIpc(): void {
   ipcMain.on("command", (_, payload: unknown) => handleCommand(payload));
+  ipcMain.handle("report:get", (_, id: unknown) => (typeof id === "string" ? store?.read<ServiceRecord | null>(reportFile(id), null) ?? null : null));
 }
 
 /** Apply a command from the control window or the menu bar. */
@@ -808,6 +914,18 @@ function handleCommand(payload: unknown): void {
       settings = { ...settings, phonePin: newPin() };
       store?.write("settings.json", settings);
       webControl.signOutAll();
+    } else if (payload.type === "exportReport") {
+      void exportReport(payload.id, payload.format).catch((error: unknown) => console.error("Report export failed", error));
+    } else if (payload.type === "deleteReport") {
+      if (payload.id !== serviceRecord?.id) {
+        try {
+          unlinkSync(join(app.getPath("userData"), reportFile(payload.id)));
+        } catch {
+          // Already gone.
+        }
+        reportList = reportList.filter((entry) => entry.id !== payload.id);
+        if (lastEndedReportId === payload.id) lastEndedReportId = undefined;
+      }
     } else if (payload.type === "disconnectPhone") {
       webControl.disconnect(payload.id);
       if (payload.newPin) {
@@ -829,6 +947,7 @@ function handleCommand(payload: unknown): void {
       state = reduce(state, payload, now, currentPlan);
     }
     withMessageRules(previous, now);
+    recordChange(previous, now, { source: "laptop", command: payload as Command });
     lastWebBroadcast = 0;
     persistRunState();
     updatePowerBlocker();
@@ -899,6 +1018,7 @@ function loadPersistentData(): void {
     armForToday(now);
   }
   persistRunState();
+  loadReports();
 }
 
 const singleInstanceLock = app.requestSingleInstanceLock();

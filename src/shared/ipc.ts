@@ -1,3 +1,4 @@
+import type { ReportListEntry, ServiceRecord } from "./report";
 import type { Command, DerivedView, Plan } from "../engine";
 
 export type Settings = {
@@ -77,6 +78,8 @@ export type TimerCommand =
   | { type: "checkForUpdates" }
   | { type: "skipAutoStartToday" }
   | { type: "newPhonePin" }
+  | { type: "exportReport"; id: string; format: "csv" | "pdf" | "print" }
+  | { type: "deleteReport"; id: string }
   /** Sign one phone out; with newPin, also change the PIN so it can't sign straight back in. */
   | { type: "disconnectPhone"; id: string; newPin?: boolean }
   | { type: "restartToUpdate" };
@@ -108,6 +111,10 @@ export type AppState = {
   /** Open the walkthrough automatically (first run only). */
   showWalkthrough: boolean;
   web: WebControlStatus;
+  /** Past services, newest first. */
+  reports: ReportListEntry[];
+  /** The last service that ended (not a short test), to offer its report. */
+  lastEndedReportId?: string;
 };
 
 /** Menu bar items the control window carries out, because they open its dialogs or need its prompts. */
@@ -125,7 +132,8 @@ export type MenuAction =
   | "restart"
   | "stop"
   /** Main process opened a file chosen from File > Import; the text comes with it. */
-  | "importFile";
+  | "importFile"
+  | "reports";
 
 export type MenuFile = { name: string; text: string };
 
@@ -133,4 +141,5 @@ export type Api = {
   send: (command: TimerCommand) => void;
   onState: (callback: (state: AppState) => void) => () => void;
   onMenu: (callback: (action: MenuAction, file?: MenuFile) => void) => () => void;
+  getReport: (id: string) => Promise<ServiceRecord | null>;
 };

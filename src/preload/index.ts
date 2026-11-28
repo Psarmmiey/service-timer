@@ -14,6 +14,9 @@ const api: Api = {
       ipcRenderer.removeListener("state", handler);
     };
   },
+  getReport(id: string) {
+    return ipcRenderer.invoke("report:get", id);
+  },
   onMenu(callback: (action: MenuAction, file?: MenuFile) => void) {
     const handler = (_event: IpcRendererEvent, action: MenuAction, file?: MenuFile) => callback(action, file);
     ipcRenderer.on("menu", handler);

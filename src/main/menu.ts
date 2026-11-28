@@ -61,6 +61,8 @@ export function menuTemplate(context: MenuContext): MenuItemConstructorOptions[]
       { label: "Paste Running Order…", accelerator: "CmdOrCtrl+Shift+V", click: () => ui("pastePlan") },
       { label: "Import Plan or CSV…", accelerator: "CmdOrCtrl+O", click: () => ui("importPlans") },
       { label: "Back Up All Plans…", accelerator: "CmdOrCtrl+Shift+S", click: () => ui("backupPlans") },
+      { type: "separator" },
+      { label: "Service Reports…", click: () => ui("reports") },
       ...(mac
         ? []
         : [

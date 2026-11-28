@@ -474,3 +474,9 @@ From user feedback. "Please wrap up" appears on the stage by itself one minute b
 ### Fix: message flash (28 Nov 2026)
 
 The Flash switch only applied to the next message, the flash was a soft fade to 45% that read as "not flashing" on a projector, and reduced-motion settings (common on church laptops) turned it off entirely. Now the switch shows and changes the message already on the stage (laptop and phone, via a new setMessageFlash command), the flash is a clear once-a-second swap between a white box and a white outline (readable in both halves, on black or red), and a message someone chose to flash keeps flashing with reduced motion on.
+
+### Decision: service reports (28 Nov 2026)
+
+Agreed with Samuel: the media team views reports in the app, leaders get a WhatsApp summary, and a one-page PDF or print is available; reports are anonymous (laptop, phone or automatic, never names, and phone names are not stored); records are kept forever.
+
+A recorder in the main process watches every change to the run (laptop and menu commands, phone commands and the clock) and keeps one record per service in `reports/<runDate>-<planId>-<startedAt>.json`: planned and actual start (and how it started), each item's stretches of time (so going back counts both), pauses, time added or taken off, skipped, removed and added-on-the-day items, and a plain timeline. A record left open by a restart mid-service is picked up again; one left open from an earlier day is closed at the last thing it saw. Runs under five minutes are marked as tests. The Reports window lists past services with how far over or under they finished, and shows the item table and timeline, with Copy for WhatsApp, Save PDF, Print and Save CSV. Trends across services (for example the Sermon running 9 minutes over on average) are the next step.
