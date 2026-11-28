@@ -56,7 +56,9 @@ When a service ends, the laptop offers its report (also under **Reports** in the
 - **Save PDF** or **Print**: a one-page sheet.
 - **Save CSV**: one row per item, for a spreadsheet.
 
-Runs shorter than five minutes count as tests and are hidden unless **Show test runs** is on. Reports are kept in the `reports` folder of the app's data folder and are never deleted automatically.
+Switch the Reports window from **Each service** to **Month**, **Quarter** or **Year** for a summary of many services: how many started and finished on time (no more than 2 minutes late, no more than 5 minutes over), charts of each service's finish and start, each item's planned against average actual time, and for a quarter or year the average by month. Use the arrows to move between periods and the menu to pick one plan. The same Copy for WhatsApp, Save PDF, Print and Save CSV buttons work here; the CSV has every item of every service in the period.
+
+Runs shorter than five minutes count as tests and are hidden unless **Show test runs** is on, and are left out of monthly, quarterly and yearly reports. Reports are kept in the `reports` folder of the app's data folder and are never deleted automatically.
 
 ## Menu bar
 

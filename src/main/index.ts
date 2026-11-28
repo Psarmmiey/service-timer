@@ -13,6 +13,7 @@ import type { AppState, DisplayStatus, MenuAction, Settings, TimerCommand, Updat
 import { menuTemplate } from "./menu";
 import { observe, type Cause } from "./service-recorder";
 import { listEntry, summarise, toCsv, toHtml, type ReportListEntry, type ServiceRecord } from "../shared/report";
+import { periodCsv, periodHtml, periodRange, summarisePeriod, type Period } from "../shared/period-report";
 import type { Command } from "../engine";
 import { createWebControl, DEFAULT_PHONE_PORT, lanAddresses, newPin } from "./web-control";
 import { canCheckForUpdates, canInstallUpdate, UPDATE_CHECK_INTERVAL_MS } from "./update-policy";
@@ -159,6 +160,12 @@ function isTimerCommand(value: unknown): value is TimerCommand {
       return typeof value.id === "string" && (value.format === "csv" || value.format === "pdf" || value.format === "print");
     case "deleteReport":
       return typeof value.id === "string";
+    case "exportPeriod":
+      return isRecord(value.period)
+        && (value.period.kind === "month" || value.period.kind === "quarter" || value.period.kind === "year")
+        && isInteger(value.period.year) && isInteger(value.period.index)
+        && (value.planName === undefined || typeof value.planName === "string")
+        && (value.format === "csv" || value.format === "pdf" || value.format === "print");
     case "disconnectPhone":
       return typeof value.id === "string" && value.id.length <= 32 && (value.newPin === undefined || typeof value.newPin === "boolean");
     case "newPhonePin":
@@ -439,10 +446,27 @@ async function exportReport(id: string, format: "csv" | "pdf" | "print"): Promis
   if (!record) return;
   const summary = summarise(record);
   const name = `${record.planName} ${record.runDate}`.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
-  const html = toHtml(summary);
+  await saveReport(name, format, toHtml(summary), () => toCsv(summary));
+}
+
+/** Records whose service date is in the range (inclusive). */
+function recordsBetween(from: string, to: string): ServiceRecord[] {
+  return readAllReports().filter((record) => record.runDate >= from && record.runDate <= to);
+}
+
+async function exportPeriod(period: Period, planName: string | undefined, format: "csv" | "pdf" | "print"): Promise<void> {
+  const { from, to } = periodRange(period);
+  const records = recordsBetween(from, to);
+  const summary = summarisePeriod(records, period, planName);
+  const name = `Service report ${summary.label}${planName ? ` ${planName}` : ""}`.replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, " ").trim();
+  await saveReport(name, format, periodHtml(summary), () => periodCsv(records, summary));
+}
+
+/** Save a report as CSV or PDF (asking where), or print it. */
+async function saveReport(name: string, format: "csv" | "pdf" | "print", html: string, csv: () => string): Promise<void> {
   if (format === "csv") {
     const result = await saveDialog({ title: "Save report as CSV", defaultPath: `${name}.csv`, filters: [{ name: "CSV", extensions: ["csv"] }] });
-    if (!result.canceled && result.filePath) await writeFile(result.filePath, toCsv(summary), "utf8");
+    if (!result.canceled && result.filePath) await writeFile(result.filePath, csv(), "utf8");
     return;
   }
   const page = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
@@ -868,6 +892,9 @@ function restartToUpdate(): void {
 
 function registerIpc(): void {
   ipcMain.on("command", (_, payload: unknown) => handleCommand(payload));
+  ipcMain.handle("reports:between", (_, from: unknown, to: unknown) => (
+    typeof from === "string" && typeof to === "string" ? recordsBetween(from, to) : []
+  ));
   ipcMain.handle("report:get", (_, id: unknown) => (typeof id === "string" ? store?.read<ServiceRecord | null>(reportFile(id), null) ?? null : null));
 }
 
@@ -916,6 +943,8 @@ function handleCommand(payload: unknown): void {
       webControl.signOutAll();
     } else if (payload.type === "exportReport") {
       void exportReport(payload.id, payload.format).catch((error: unknown) => console.error("Report export failed", error));
+    } else if (payload.type === "exportPeriod") {
+      void exportPeriod(payload.period, payload.planName, payload.format).catch((error: unknown) => console.error("Report export failed", error));
     } else if (payload.type === "deleteReport") {
       if (payload.id !== serviceRecord?.id) {
         try {
