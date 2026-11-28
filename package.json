@@ -1,6 +1,6 @@
 {
   "name": "service-timer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stage countdown timer for church services",
   "author": {
     "name": "RCCG City of God For All Nations, Stirling"
@@ -17,7 +17,7 @@
     "package": "electron-builder",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src electron.vite.config.ts --max-warnings 0",
-    "test:unit": "vitest run --coverage src/engine src/main/*.test.ts src/renderer/shared/format.test.ts src/shared/*.test.ts",
+    "test:unit": "vitest run --coverage src/engine src/main/*.test.ts src/renderer/shared/*.test.ts src/shared/*.test.ts",
     "test:smoke": "npm run build && vitest run src/e2e --no-file-parallelism --test-timeout=20000",
     "test": "npm run test:unit && npm run test:smoke",
     "test:ci": "npm run test:unit && npm run build && xvfb-run -a vitest run src/e2e --no-file-parallelism --test-timeout=20000",
