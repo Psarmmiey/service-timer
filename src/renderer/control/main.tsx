@@ -46,6 +46,7 @@ import {
 import { useChime } from "./chime";
 import { isLateStart, isLiveView, MINUTE_MS, planWhenLabel, plannedStartOf, send } from "./common";
 import { PlanEditorDialog, type PlanRequest } from "./plan-editor";
+import { ReportsDialog } from "./reports-dialog";
 import { SettingsDialog, type Section as SettingsSection } from "./settings-dialog";
 import { useTheme } from "./theme";
 import { Walkthrough } from "./walkthrough";
@@ -408,6 +409,25 @@ function ControlApp() {
   // Menu bar items (File, Timer, Help) arrive here so they can open this window's dialogs.
   const [planRequest, setPlanRequest] = useState<PlanRequest | undefined>(undefined);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [reportId, setReportId] = useState<string | undefined>(undefined);
+  const openReports = (id?: string) => {
+    setReportId(id);
+    setReportsOpen(true);
+  };
+  // When a service ends, offer its report.
+  const seenReport = useRef<string | undefined | null>(null);
+  useEffect(() => {
+    const id = state?.lastEndedReportId;
+    if (seenReport.current === null) {
+      seenReport.current = id;
+      return;
+    }
+    if (id && id !== seenReport.current) {
+      seenReport.current = id;
+      toast("Service report ready", { description: "See how the service went against the plan.", duration: 15_000, action: { label: "Open", onClick: () => openReports(id) } });
+    }
+  }, [state?.lastEndedReportId]);
   useEffect(() => window.api.onMenu((action, file) => {
     const latest = stateRef.current;
     switch (action) {
@@ -419,6 +439,7 @@ function ControlApp() {
       case "phone": openSettings("phone"); break;
       case "walkthrough": setWalkthroughOpen(true); break;
       case "shortcuts": setShortcutsOpen(true); break;
+      case "reports": openReports(); break;
       case "toggle": if (latest) toggleRef.current(latest); break;
       case "message": messageRef.current?.focus(); break;
       case "restart": setConfirm("restart"); break;
@@ -565,6 +586,7 @@ function ControlApp() {
           <span className="text-[22px] font-semibold tabular-nums">{formatClock(state.now)}</span>
           <div className="h-6 w-px bg-zinc-200" />
           <Button variant="ghost" size="sm" onClick={() => setPlansOpen(true)} data-tour="plans">Plans</Button>
+          <Button variant="ghost" size="sm" onClick={() => openReports()}>Reports</Button>
           <Tooltip label="Walkthrough (?)"><Button aria-label="Walkthrough" variant="ghost" size="icon" onClick={() => setWalkthroughOpen(true)}><HelpCircle className="size-[18px]" /></Button></Tooltip>
           <Tooltip label="Settings">
             <Button aria-label="Settings" variant="ghost" size="icon" className="relative" onClick={() => openSettings()} data-tour="settings">
@@ -653,10 +675,15 @@ function ControlApp() {
                           : `${state.plan.name} was planned for ${formatClock(plannedStartOf(state))}.`}
                     </strong>
                     <span className="mt-1 text-zinc-500">
-                      {state.plan.autoStart ? "Auto-start is off for today." : "Auto-start is off for this plan, so press Start when you're ready."}
+                      {view.status === "finished"
+                        ? "The report shows how it went against the plan."
+                        : state.plan.autoStart ? "Auto-start is off for today." : "Auto-start is off for this plan, so press Start when you're ready."}
                     </span>
                     <div className="mt-auto grid gap-2 pt-3">
-                      <Button variant="default" onClick={() => startFor(state)}><Play className="size-4" /> {view.status === "finished" ? "Start again" : "Start"}</Button>
+                      {view.status === "finished" && state.lastEndedReportId ? (
+                        <Button variant="default" onClick={() => openReports(state.lastEndedReportId)}>View the service report</Button>
+                      ) : null}
+                      <Button variant={view.status === "finished" && state.lastEndedReportId ? "outline" : "default"} onClick={() => startFor(state)}><Play className="size-4" /> {view.status === "finished" ? "Start again" : "Start"}</Button>
                       <Button onClick={() => setStartDialog("choose")}>Start from another item</Button>
                     </div>
                   </>
@@ -839,6 +866,7 @@ function ControlApp() {
       <CustomAdjustDialog open={customAdjustOpen} onOpenChange={setCustomAdjustOpen} />
       <PlanEditorDialog state={state} open={plansOpen} onOpenChange={setPlansOpen} request={planRequest} />
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ReportsDialog state={state} open={reportsOpen} onOpenChange={setReportsOpen} openId={reportId} />
       <SettingsDialog state={state} open={settingsOpen} onOpenChange={setSettingsOpen} startSection={settingsSection} onReplayWalkthrough={() => setWalkthroughOpen(true)} />
       <Walkthrough open={walkthroughOpen} onClose={closeWalkthrough} />
       <Toaster theme={theme} />

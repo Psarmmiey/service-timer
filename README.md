@@ -45,6 +45,21 @@ xattr -cr "/Applications/Service Timer.app"
 
 Unsigned Mac builds do not support OTA updates. Reinstall the newer `.dmg` or `.zip` by hand.
 
+## Service reports
+
+Every service the timer runs is recorded on the laptop: when it started (and how late), when each item really started and finished, time added or taken off, pauses, skipped items, running order changes and messages. Reports say whether something was done on the laptop, a phone or automatically, never who.
+
+When a service ends, the laptop offers its report (also under **Reports** in the header and **File > Service Reports**):
+
+- Each item's planned and actual time, and how far over or under it ran.
+- **Copy for WhatsApp**: a short summary to paste into the leaders' group.
+- **Save PDF** or **Print**: a one-page sheet.
+- **Save CSV**: one row per item, for a spreadsheet.
+
+Switch the Reports window from **Each service** to **Month**, **Quarter** or **Year** for a summary of many services: how many started and finished on time (no more than 2 minutes late, no more than 5 minutes over), charts of each service's finish and start, each item's planned against average actual time, and for a quarter or year the average by month. Use the arrows to move between periods and the menu to pick one plan. The same Copy for WhatsApp, Save PDF, Print and Save CSV buttons work here; the CSV has every item of every service in the period.
+
+Runs shorter than five minutes count as tests and are hidden unless **Show test runs** is on, and are left out of monthly, quarterly and yearly reports. Reports are kept in the `reports` folder of the app's data folder and are never deleted automatically.
+
 ## Menu bar
 
 On Windows the menu bar is at the top of the window; on a Mac it is at the top of the screen.
